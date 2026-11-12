@@ -23,7 +23,7 @@ import urllib.parse
 import urllib.request
 
 from app.core.config import settings
-from app.core.db import db_transaction, init_global_tables, init_pool, close_pool
+from app.core.db import db_conn, db_transaction, init_global_tables, init_pool, close_pool
 
 USER_AGENT = (
     "drive-platform-anime-crawler/1.0 "
@@ -457,16 +457,33 @@ async def crawl_all(max_per_region: int | None = None, persist: bool = True) -> 
         return collected
 
 
+async def _has_characters() -> bool:
+    """表里是否已有角色数据（用于判断启动时是否需要立即抓取）。"""
+    try:
+        async with db_conn() as conn:
+            return bool(await conn.fetchval("SELECT 1 FROM anime_characters LIMIT 1"))
+    except Exception:  # noqa: BLE001 - 表不存在/读库异常一律视为「无数据」
+        return False
+
+
 async def crawl_loop():
-    """后台循环：启动后先抓一次，之后按配置间隔刷新。"""
+    """后台循环：表为空时启动即抓一次；已有数据则只按配置间隔刷新（默认 7 天）。"""
     interval = max(1, int(settings.ANIME_CRAWL_INTERVAL_MINUTES)) * 60
-    await asyncio.sleep(10)  # 等建表/启动稳定后再抓
+    await asyncio.sleep(10)  # 等建表/启动稳定后再判断
+
+    # 已有数据就不再在每次启动时重复抓取，避免「库里有数据还触发爬虫」
+    if not await _has_characters():
+        try:
+            await crawl_all()
+        except Exception as exc:  # noqa: BLE001 - 定时任务不能因单轮异常退出
+            print(f"❌ [ANIME] 启动抓取异常: {exc}")
+
     while True:
+        await asyncio.sleep(interval)
         try:
             await crawl_all()
         except Exception as exc:  # noqa: BLE001 - 定时任务不能因单轮异常退出
             print(f"❌ [ANIME] 定时抓取异常: {exc}")
-        await asyncio.sleep(interval)
 
 
 # ---------------------------------------------------------------------------

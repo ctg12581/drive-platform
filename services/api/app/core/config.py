@@ -50,7 +50,8 @@ class Settings(BaseSettings):
     # 动漫人物图鉴定时爬取：是否启用、抓取间隔（分钟）
     # MAX_PER_REGION = 0 表示「不限制角色总数」，尽可能多抓；正整数则按该值截断
     ANIME_CRAWL_ENABLED: bool = True
-    ANIME_CRAWL_INTERVAL_MINUTES: int = 360
+    # 动漫资料变化很慢，默认 7 天刷新一次即可（可用环境变量覆盖）
+    ANIME_CRAWL_INTERVAL_MINUTES: int = 10080
     ANIME_CRAWL_MAX_PER_REGION: int = 0
     # AniList 每个地区最多翻多少页（每页 10 部作品 × 10 个角色，30 页约 300 部作品/地区）
     ANIME_CRAWL_MAX_PAGES_PER_REGION: int = 30
