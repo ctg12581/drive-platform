@@ -1,17 +1,27 @@
 <!-- src/views/HomeView.vue · 小红书瀑布流首页 -->
 <template>
   <div class="feed-container">
-    <!-- 顶部频道切换（热榜已移至底部导航，推荐拆分为国内/国外） -->
-    <div v-if="currentSubTab !== 'rank'" class="feed-tabs">
-      <button @click="changeTab('cn')" :class="['feed-tab-btn', { active: currentSubTab === 'cn' }]">
-        <span class="tab-text">国内</span>
-      </button>
-      <button @click="changeTab('intl')" :class="['feed-tab-btn', { active: currentSubTab === 'intl' }]">
-        <span class="tab-text">国外</span>
-      </button>
-      <button @click="changeTab('following')" :class="['feed-tab-btn', { active: currentSubTab === 'following' }]">
-        <span class="tab-text">关注</span>
-      </button>
+    <!-- 顶部频道切换：首页（国内/国外/关注）与热榜（国内/国外） -->
+    <div class="feed-tabs">
+      <template v-if="isRankView">
+        <button @click="changeTab('rank')" :class="['feed-tab-btn', { active: currentSubTab === 'rank' }]">
+          <span class="tab-text">国内</span>
+        </button>
+        <button @click="changeTab('rank_intl')" :class="['feed-tab-btn', { active: currentSubTab === 'rank_intl' }]">
+          <span class="tab-text">国外</span>
+        </button>
+      </template>
+      <template v-else>
+        <button @click="changeTab('cn')" :class="['feed-tab-btn', { active: currentSubTab === 'cn' }]">
+          <span class="tab-text">国内</span>
+        </button>
+        <button @click="changeTab('intl')" :class="['feed-tab-btn', { active: currentSubTab === 'intl' }]">
+          <span class="tab-text">国外</span>
+        </button>
+        <button @click="changeTab('following')" :class="['feed-tab-btn', { active: currentSubTab === 'following' }]">
+          <span class="tab-text">关注</span>
+        </button>
+      </template>
     </div>
 
     <!-- 有新动态提示 -->
@@ -22,7 +32,7 @@
     <!-- ============ 推荐 / 热榜：瀑布流卡片 ============ -->
     <section v-if="currentSubTab !== 'following'" class="feed-section">
       <div class="section-bar">
-        <span class="section-title-text">{{ currentSubTab === 'rank' ? '🏆 热榜总榜' : currentSubTab === 'intl' ? '🌍 国外热点' : '🔥 国内热点' }}</span>
+        <span class="section-title-text">{{ isRankView ? (currentSubTab === 'rank_intl' ? '🏆 国外热榜' : '🏆 国内热榜') : currentSubTab === 'intl' ? '🌍 国外热点' : '🔥 国内热点' }}</span>
         <span class="section-count">
           {{ activeList.total }} 条<span v-if="activeList.updatedAt"> · {{ formatLocalTime(activeList.updatedAt) }}</span>
         </span>
@@ -54,7 +64,7 @@
               <span class="cover-text-inner">{{ coverText(n) }}</span>
               <span class="cover-watermark">{{ noteEmoji(n, idx) }}</span>
             </div>
-            <span v-if="currentSubTab === 'rank'" class="cover-rank">{{ (activeList.page - 1) * NEWS_PAGE_SIZE + idx + 1 }}</span>
+            <span v-if="isRankView" class="cover-rank">{{ (activeList.page - 1) * NEWS_PAGE_SIZE + idx + 1 }}</span>
             <span v-else-if="n.category" class="cover-chip">{{ n.category }}</span>
             <span class="cover-jump">↗</span>
           </div>
@@ -63,7 +73,7 @@
             <div class="note-foot">
               <span class="note-src"><span class="note-src-icon">{{ sourceIcon(n.source) }}</span>{{ n.source }}</span>
               <span class="note-like">
-                <span v-if="currentSubTab === 'rank' && n.hot">🔥 {{ formatHot(n.hot) }}</span>
+                <span v-if="isRankView && n.hot">🔥 {{ formatHot(n.hot) }}</span>
                 <span v-else>♡ {{ likeCount(n, idx) }}</span>
               </span>
             </div>
@@ -188,8 +198,8 @@ const router = useRouter()
 
 // 频道可由底部「热榜」入口通过 ?tab=rank 打开
 const queryTab = route.query.tab
-const initialTab = queryTab === 'rank' || queryTab === 'following' || queryTab === 'intl' ? queryTab : 'cn'
-const currentSubTab = ref(initialTab) // 'cn' 国内, 'intl' 国外, 'rank' 热榜, 'following' 关注
+const initialTab = ['rank', 'rank_intl', 'following', 'intl'].includes(queryTab) ? queryTab : 'cn'
+const currentSubTab = ref(initialTab) // 'cn' 国内, 'intl' 国外, 'rank' 热榜国内, 'rank_intl' 热榜国外, 'following' 关注
 const posts = ref(momentsStore.cachedPosts)
 const loading = ref(posts.value.length === 0)
 const activeProfile = ref(null)
@@ -205,13 +215,22 @@ const NEWS_PAGE_SIZE = 20
 const lists = reactive({
   cn: { items: [], loading: false, page: 1, total: 0, hasMore: false, updatedAt: null },
   intl: { items: [], loading: false, page: 1, total: 0, hasMore: false, updatedAt: null },
-  rank: { items: [], loading: false, page: 1, total: 0, hasMore: false, updatedAt: null },
+  rank_cn: { items: [], loading: false, page: 1, total: 0, hasMore: false, updatedAt: null },
+  rank_intl: { items: [], loading: false, page: 1, total: 0, hasMore: false, updatedAt: null },
 })
 
-// 当前列表：国内 / 国外 / 热榜
-const activeKey = computed(() =>
-  currentSubTab.value === 'rank' ? 'rank' : currentSubTab.value === 'intl' ? 'intl' : 'cn'
-)
+// 频道 -> 列表 key / 接口 kind / region
+const TAB_META = {
+  cn: { key: 'cn', kind: 'news', region: 'cn' },
+  intl: { key: 'intl', kind: 'news', region: 'intl' },
+  rank: { key: 'rank_cn', kind: 'rank', region: 'cn' },
+  rank_intl: { key: 'rank_intl', kind: 'rank', region: 'intl' },
+}
+
+const isRankView = computed(() => currentSubTab.value === 'rank' || currentSubTab.value === 'rank_intl')
+
+// 当前列表：国内 / 国外 / 热榜（国内 / 国外）
+const activeKey = computed(() => (TAB_META[currentSubTab.value] || TAB_META.cn).key)
 const activeList = computed(() => lists[activeKey.value])
 
 // ===== 瀑布流视觉辅助：封面渐变 / 表情 / 点赞数（确定性伪随机）=====
@@ -299,20 +318,16 @@ const formatHot = (value) => {
   return num >= 10000 ? `${(num / 10000).toFixed(1)}万` : `${num}`
 }
 
-const totalPages = (kind) => Math.max(1, Math.ceil((lists[kind].total || 0) / NEWS_PAGE_SIZE))
+const totalPages = (tab) => Math.max(1, Math.ceil((lists[(TAB_META[tab] || TAB_META.cn).key].total || 0) / NEWS_PAGE_SIZE))
 
-const loadPage = async (key, page = 1) => {
-  const st = lists[key]
-  if (!st) return
+const loadPage = async (tab, page = 1) => {
+  const meta = TAB_META[tab]
+  if (!meta) return
+  const st = lists[meta.key]
   const target = Math.max(1, page)
   st.loading = true
   try {
-    let url = `/news/hot?page=${target}&page_size=${NEWS_PAGE_SIZE}`
-    if (key === 'rank') {
-      url += '&kind=rank'
-    } else {
-      url += `&kind=news&region=${key === 'intl' ? 'intl' : 'cn'}`
-    }
+    const url = `/news/hot?page=${target}&page_size=${NEWS_PAGE_SIZE}&kind=${meta.kind}&region=${meta.region}`
     const res = await apiFetch(url)
     const data = await res.json()
     if (res.ok && data.success) {
@@ -330,10 +345,11 @@ const loadPage = async (key, page = 1) => {
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
-const goPage = (kind, page) => {
-  const target = Math.min(Math.max(1, page), totalPages(kind))
-  if (target === lists[kind].page && lists[kind].items.length) return
-  loadPage(kind, target)
+const goPage = (tab, page) => {
+  const key = (TAB_META[tab] || TAB_META.cn).key
+  const target = Math.min(Math.max(1, page), totalPages(tab))
+  if (target === lists[key].page && lists[key].items.length) return
+  loadPage(tab, target)
 }
 
 const openSource = (item) => {
@@ -408,10 +424,9 @@ const changeTab = (tab, fromRoute = false) => {
   if (tab === 'following') {
     posts.value = []
     fetchTimeline(1)
-  } else if ((tab === 'cn' || tab === 'intl') && lists[tab].items.length === 0) {
-    loadPage(tab, 1)
-  } else if (tab === 'rank' && lists.rank.items.length === 0) {
-    loadPage('rank', 1)
+  } else {
+    const meta = TAB_META[tab]
+    if (meta && lists[meta.key].items.length === 0) loadPage(tab, 1)
   }
   // 同步到路由 query，保证底部导航高亮（首页 / 热榜）正确
   if (!fromRoute) {
@@ -424,7 +439,7 @@ const changeTab = (tab, fromRoute = false) => {
 watch(
   () => route.query.tab,
   (t) => {
-    const target = t === 'rank' || t === 'following' || t === 'intl' ? t : 'cn'
+    const target = ['rank', 'rank_intl', 'following', 'intl'].includes(t) ? t : 'cn'
     if (target !== currentSubTab.value) changeTab(target, true)
   },
 )

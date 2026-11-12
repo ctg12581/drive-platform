@@ -35,7 +35,7 @@
 
     <!-- 底部固定导航栏（小红书五宫格） -->
     <nav class="mobile-bottom-bar">
-      <router-link to="/home" :class="['bottom-link', { active: route.path === '/home' && route.query.tab !== 'rank' }]" aria-label="首页">
+      <router-link to="/home" :class="['bottom-link', { active: isHomeTab }]" aria-label="首页">
         <svg viewBox="0 0 24 24" class="svg-icon"><path d="M11.3 2.6a1 1 0 0 1 1.4 0l8 7.4a1 1 0 0 1 .3.74V20a1.5 1.5 0 0 1-1.5 1.5h-4.4v-6.1h-4.2v6.1H4.5A1.5 1.5 0 0 1 3 20v-9.26a1 1 0 0 1 .3-.74l8-7.4z"/></svg>
         <span class="bottom-label">首页</span>
       </router-link>
@@ -161,7 +161,8 @@ const momentsStore = useMomentsStore()
 const router = useRouter()
 const route = useRoute()
 
-const isRankTab = computed(() => route.path === '/home' && route.query.tab === 'rank')
+const isRankTab = computed(() => route.path === '/home' && ['rank', 'rank_intl'].includes(route.query.tab))
+const isHomeTab = computed(() => route.path === '/home' && !['rank', 'rank_intl'].includes(route.query.tab))
 
 const isMobileMenuOpen = ref(false)
 const showComposeModal = ref(false)
