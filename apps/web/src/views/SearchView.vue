@@ -62,6 +62,7 @@
           <h3 class="modal-tab-title">TA 的笔记 ({{ activeProfile.posts.length }})</h3>
           <div v-if="activeProfile.posts.length === 0" class="xhs-empty" style="padding:28px 0;">TA 还没有发布过任何笔记。</div>
           <div v-for="p in activeProfile.posts" :key="p.id" class="modal-note">
+            <img v-if="isUrl(p.image)" :src="p.image" class="modal-note-img" loading="lazy" alt="" @error="(e) => e.target.style.display='none'" />
             <div class="modal-note-time">{{ formatLocalTime(p.time) }}</div>
             <div class="modal-note-content">{{ p.content }}</div>
           </div>
@@ -404,6 +405,14 @@ const openUserProfile = async (targetUsername) => {
   padding: 12px 0;
   border-bottom: 1px solid var(--xhs-line);
   text-align: left;
+}
+.modal-note-img {
+  width: 100%;
+  max-height: 200px;
+  object-fit: cover;
+  border-radius: 12px;
+  margin-bottom: 8px;
+  display: block;
 }
 .modal-note-time {
   font-size: 0.72rem;

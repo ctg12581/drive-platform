@@ -124,6 +124,23 @@ def _child_link(node) -> str:
     return ""
 
 
+def _first_image(node) -> str:
+    """从 RSS/Atom 条目里提取封面图：media:content / media:thumbnail / enclosure / description 内 <img>。"""
+    for el in node.iter():
+        tag = el.tag.split("}")[-1]
+        if tag in ("content", "thumbnail", "enclosure"):
+            url = (el.get("url") or el.get("href") or "").strip()
+            mime = (el.get("type") or "").lower()
+            if url and (mime.startswith("image") or re.search(r"\.(jpe?g|png|gif|webp)(\?|$)", url, re.I)):
+                return url
+    desc = _child_text(node, "description") or _child_text(node, "summary")
+    if desc:
+        m = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', desc, re.I)
+        if m:
+            return html.unescape(m.group(1)).strip()
+    return ""
+
+
 def parse_rss(text: str) -> list[dict]:
     """解析 RSS/Atom 文本（Google 新闻、BBC 中文、36氪等），输出统一结构。
 
@@ -143,6 +160,7 @@ def parse_rss(text: str) -> list[dict]:
             "title": title,
             "summary": summary[:300],
             "url": link,
+            "image": _first_image(node),
             "hot": 0,
             "rank": idx + 1,
         })
@@ -305,6 +323,8 @@ async def _fetch_one(cfg: dict) -> list[dict]:
         item["kind"] = cfg.get("section") or ("news" if cfg.get("kind") == "rss" else "rank")
         if not item.get("summary"):
             item["summary"] = ""
+        if not item.get("image"):
+            item["image"] = ""
     return parsed
 
 
@@ -318,6 +338,7 @@ async def _persist(items: list[dict]):
             (it.get("title") or "")[:500],
             (it.get("summary") or "")[:1000],
             (it.get("url") or "")[:1000],
+            (it.get("image") or "")[:1000],
             int(it.get("hot") or 0),
             str(it.get("external_id") or "")[:200],
             int(it.get("rank") or 0),
@@ -327,8 +348,8 @@ async def _persist(items: list[dict]):
     async with db_transaction() as conn:
         await conn.execute("DELETE FROM hot_news")
         await conn.executemany(
-            "INSERT INTO hot_news (source, kind, category, title, summary, url, hot, external_id, rank_index, fetched_at) "
-            "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())",
+            "INSERT INTO hot_news (source, kind, category, title, summary, url, image_url, hot, external_id, rank_index, fetched_at) "
+            "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())",
             rows,
         )
 

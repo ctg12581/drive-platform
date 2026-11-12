@@ -48,8 +48,11 @@
           class="note-card"
           @click="openSource(n)"
         >
-          <div class="note-cover" :style="coverStyle(n, idx)">
-            <span class="cover-emoji">{{ noteEmoji(n, idx) }}</span>
+          <div class="note-cover" :class="{ 'has-image': coverImage(n) }" :style="coverStyle(n, idx)">
+            <img v-if="coverImage(n)" :src="coverImage(n)" class="cover-img" loading="lazy" alt="" @error="onCoverError" />
+            <template v-else>
+              <span class="cover-emoji">{{ noteEmoji(n, idx) }}</span>
+            </template>
             <span v-if="currentSubTab === 'rank'" class="cover-rank">{{ (activeList.page - 1) * NEWS_PAGE_SIZE + idx + 1 }}</span>
             <span v-else-if="n.category" class="cover-chip">{{ n.category }}</span>
             <span class="cover-jump">↗</span>
@@ -101,8 +104,11 @@
             class="note-card"
             @click="openUserProfile(post.username)"
           >
-            <div class="note-cover" :style="coverStyle(post, idx)">
-              <span class="cover-emoji">{{ noteEmoji(post, idx) }}</span>
+            <div class="note-cover" :class="{ 'has-image': coverImage(post) }" :style="coverStyle(post, idx)">
+              <img v-if="coverImage(post)" :src="coverImage(post)" class="cover-img" loading="lazy" alt="" @error="onCoverError" />
+              <template v-else>
+                <span class="cover-emoji">{{ noteEmoji(post, idx) }}</span>
+              </template>
             </div>
             <div class="note-body">
               <h3 class="note-title">{{ post.content }}</h3>
@@ -150,6 +156,7 @@
           <h3 class="modal-tab-title">TA 的笔记 ({{ activeProfile.posts.length }})</h3>
           <div v-if="activeProfile.posts.length === 0" class="xhs-empty" style="padding:32px 0;">TA 还没有发布过任何笔记。</div>
           <div v-for="p in activeProfile.posts" :key="p.id" class="modal-note">
+            <img v-if="coverImage(p)" :src="coverImage(p)" class="modal-note-img" loading="lazy" alt="" @error="onCoverError" />
             <div class="modal-note-time">{{ formatLocalTime(p.time) }}</div>
             <div class="modal-note-content">{{ p.content }}</div>
           </div>
@@ -229,6 +236,15 @@ const coverStyle = (item, idx) => {
 }
 
 const noteEmoji = (item, idx) => COVER_EMOJIS[seedOf(item, idx) % COVER_EMOJIS.length]
+
+// 真实封面图：有 image 字段则用真实图片，否则回退到渐变+emoji
+const coverImage = (item) => {
+  const img = item && item.image
+  return img && isUrl(img) ? img : ''
+}
+const onCoverError = (e) => {
+  if (e && e.target) e.target.style.display = 'none'
+}
 
 const likeCount = (item, idx) => {
   const h = seedOf(item, idx)
@@ -558,6 +574,18 @@ const openUserProfile = async (targetUsername) => {
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.35);
 }
+.note-cover.has-image::before,
+.note-cover.has-image::after {
+  display: none;
+}
+.cover-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 0;
+}
 .note-cover::before {
   width: 68px;
   height: 68px;
@@ -844,6 +872,14 @@ const openUserProfile = async (targetUsername) => {
   padding: 12px 0;
   border-bottom: 1px solid var(--xhs-line);
   text-align: left;
+}
+.modal-note-img {
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+  border-radius: 12px;
+  margin-bottom: 8px;
+  display: block;
 }
 .modal-note-time {
   font-size: 0.72rem;

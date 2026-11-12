@@ -189,9 +189,11 @@ SCHEMA_STATEMENTS = [
         id SERIAL PRIMARY KEY,
         username VARCHAR(50) NOT NULL,
         content TEXT NOT NULL,
+        image_url TEXT DEFAULT '',
         created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
     );
     """,
+    "ALTER TABLE moments ADD COLUMN IF NOT EXISTS image_url TEXT DEFAULT '';",
     """
     CREATE TABLE IF NOT EXISTS quiz_questions (
         id SERIAL PRIMARY KEY,
@@ -241,6 +243,7 @@ SCHEMA_STATEMENTS = [
         title TEXT NOT NULL,
         summary TEXT DEFAULT '',
         url TEXT DEFAULT '',
+        image_url TEXT DEFAULT '',
         hot BIGINT DEFAULT 0,
         external_id VARCHAR(200) DEFAULT '',
         rank_index INT DEFAULT 0,
@@ -248,6 +251,7 @@ SCHEMA_STATEMENTS = [
     );
     """,
     "ALTER TABLE hot_news ADD COLUMN IF NOT EXISTS kind VARCHAR(10) DEFAULT 'rank';",
+    "ALTER TABLE hot_news ADD COLUMN IF NOT EXISTS image_url TEXT DEFAULT '';",
     "CREATE INDEX IF NOT EXISTS idx_chat_messages_sender_receiver ON chat_messages (sender, receiver);",
     "CREATE INDEX IF NOT EXISTS idx_chat_messages_receiver_unread ON chat_messages (receiver, is_read);",
     "CREATE INDEX IF NOT EXISTS idx_friendships_username ON friendships (username);",

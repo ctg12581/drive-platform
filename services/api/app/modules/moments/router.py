@@ -13,12 +13,14 @@ router = APIRouter(prefix="/moments", tags=["Moments 动态广场与主页信息
 
 MOMENT_COLUMNS = """
     m.id, m.username, m.content, m.created_at,
-    COALESCE(u.nickname, m.username), COALESCE(u.avatar_url, '👤')
+    COALESCE(u.nickname, m.username), COALESCE(u.avatar_url, '👤'),
+    COALESCE(m.image_url, '')
 """
 
 
 class MomentCreateSchema(BaseModel):
     content: str = Field(..., min_length=1, max_length=280)
+    image_url: str = Field("", max_length=1000)
 
 
 def serialize_moment(row) -> dict:
@@ -30,6 +32,7 @@ def serialize_moment(row) -> dict:
         "time": to_iso_utc(row[3]),
         "nickname": row[4],
         "avatar": row[5],
+        "image": row[6] or "",
     }
 
 
@@ -37,9 +40,10 @@ def serialize_moment(row) -> dict:
 async def create_moment(data: MomentCreateSchema, current_user: dict = Depends(get_current_user)):
     async with db_transaction() as conn:
         await conn.execute(
-            "INSERT INTO moments (username, content) VALUES ($1, $2)",
+            "INSERT INTO moments (username, content, image_url) VALUES ($1, $2, $3)",
             current_user["username"],
             data.content.strip(),
+            (data.image_url or "").strip(),
         )
     # 实时广播“有新动态”，替代首页 15s 轮询（排除发帖者本人）
     try:

@@ -26,7 +26,8 @@ def serialize_db_row(row) -> dict:
         "summary": row[4] or "",
         "url": row[5] or "",
         "hot": int(row[6] or 0),
-        "published_at": to_iso_utc(row[7]),
+        "image": row[7] or "",
+        "published_at": to_iso_utc(row[8]),
     }
 
 
@@ -61,9 +62,9 @@ async def get_hot_news(
             if total > 0:
                 records = await conn.fetch(
                     """
-                    SELECT id, source, category, title, summary, url, hot, fetched_at
+                    SELECT id, source, category, title, summary, url, hot, image_url, fetched_at
                     FROM (
-                        SELECT id, source, category, title, summary, url, hot, fetched_at,
+                        SELECT id, source, category, title, summary, url, hot, image_url, fetched_at,
                                ROW_NUMBER() OVER (PARTITION BY source ORDER BY hot DESC, id ASC) AS rn
                         FROM hot_news
                         WHERE fetched_at > now() - interval '24 hours'
@@ -140,7 +141,7 @@ async def get_news_detail(news_id: int):
     try:
         async with db_conn() as conn:
             row = await conn.fetchrow(
-                "SELECT id, source, category, title, summary, url, hot, fetched_at "
+                "SELECT id, source, category, title, summary, url, hot, image_url, fetched_at "
                 "FROM hot_news WHERE id = $1",
                 news_id,
             )

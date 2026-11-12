@@ -81,7 +81,8 @@
           <div v-else class="notes-grid">
             <article v-for="(post, idx) in myPosts" :key="post.id" class="note-card">
               <div class="note-cover" :style="noteCoverStyle(post, idx)">
-                <span class="cover-emoji">{{ noteEmoji(post, idx) }}</span>
+                <img v-if="noteImage(post)" :src="noteImage(post)" class="cover-img" loading="lazy" alt="" @error="onCoverError" />
+                <span v-else class="cover-emoji">{{ noteEmoji(post, idx) }}</span>
               </div>
               <div class="note-body">
                 <h4 class="note-title">{{ post.content }}</h4>
@@ -175,6 +176,8 @@ const noteCoverStyle = (p, idx) => {
   return { background: GRADS[h % GRADS.length], height: 140 + ((h >>> 4) % 5) * 14 + 'px' }
 }
 const noteEmoji = (p, idx) => EMOJIS[noteHash(`${p.id}|${p.content}|${idx}`) % EMOJIS.length]
+const noteImage = (p) => (p && p.image && isUrl(p.image) ? p.image : '')
+const onCoverError = (e) => { if (e && e.target) e.target.style.display = 'none' }
 const noteLikes = (p, idx) => {
   const n = 30 + (noteHash(`${p.id}|${p.content}`) % 6800)
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`
@@ -381,6 +384,7 @@ const handleLogout = () => {
   animation: xhs-fade-up 0.3s ease both;
 }
 .note-cover { position: relative; width: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.cover-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .cover-emoji { font-size: 2.2rem; filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.12)); }
 .note-body { padding: 9px 10px 11px; }
 .note-title {

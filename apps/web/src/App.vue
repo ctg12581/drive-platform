@@ -111,19 +111,26 @@
         <div class="compose-modal-header">
           <button class="compose-cancel" @click="closeComposeModal">取消</button>
           <span class="compose-title">发布笔记</span>
-          <button @click="handleGlobalPublish" class="compose-publish" :disabled="!globalPostContent.trim()">发布</button>
+          <button @click="handleGlobalPublish" class="compose-publish" :disabled="!globalPostContent.trim() || composeUploading">发布</button>
         </div>
         <div class="global-compose-body">
           <div class="compose-content-area">
             <textarea v-model="globalPostContent" placeholder="分享这一刻的新鲜事…" class="global-textarea" rows="4" maxlength="280"></textarea>
             <div class="compose-media-row">
-              <div class="media-tile">＋</div>
-              <div class="media-tile media-tile-2"></div>
-              <div class="media-tile media-tile-3"></div>
+              <input ref="imageInput" type="file" accept="image/*" style="display: none" @change="handleComposeImage" />
+              <div v-if="!composeImagePreview" class="media-tile media-add" @click="triggerImagePick">
+                <span v-if="!composeUploading">＋</span>
+                <span v-else class="media-uploading">上传中…</span>
+              </div>
+              <div v-else class="media-preview">
+                <img :src="composeImagePreview" class="media-preview-img" />
+                <button class="media-remove" @click="removeComposeImage" type="button">✕</button>
+              </div>
+              <span class="compose-hint-inline">添加封面图 · 让笔记更生动</span>
             </div>
             <div class="compose-footer-row">
               <span class="char-counter" :class="{ 'warning-count': globalPostContent.length >= 260 }">{{ globalPostContent.length }}/280</span>
-              <span class="compose-hint">添加图片 · 让笔记更生动</span>
+              <span class="compose-hint">图片将作为笔记封面</span>
             </div>
           </div>
         </div>
@@ -153,6 +160,56 @@ const isMobileMenuOpen = ref(false)
 const showComposeModal = ref(false)
 const globalPostContent = ref('')
 
+// 封面图上传
+const imageInput = ref(null)
+const composeImageUrl = ref('')       // 上传成功后的可访问 URL
+const composeImagePreview = ref('')   // 本地即时预览
+const composeUploading = ref(false)
+
+const triggerImagePick = () => {
+  if (composeUploading.value) return
+  imageInput.value && imageInput.value.click()
+}
+
+const removeComposeImage = () => {
+  composeImageUrl.value = ''
+  composeImagePreview.value = ''
+  if (imageInput.value) imageInput.value.value = ''
+}
+
+const handleComposeImage = async (event) => {
+  const file = event.target.files && event.target.files[0]
+  if (!file) return
+  if (!file.type.startsWith('image/')) {
+    alert('请选择图片文件')
+    return
+  }
+  if (file.size > 2 * 1024 * 1024) {
+    alert('图片过大，请选择小于 2MB 的图片')
+    event.target.value = ''
+    return
+  }
+  composeImagePreview.value = URL.createObjectURL(file)
+  composeUploading.value = true
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await apiFetch('/chat/upload', { method: 'POST', body: formData })
+    const data = await res.json()
+    if (res.ok && data.success && data.url) {
+      composeImageUrl.value = data.url
+    } else {
+      alert(data.detail || '图片上传失败')
+      removeComposeImage()
+    }
+  } catch {
+    alert('图片上传失败')
+    removeComposeImage()
+  } finally {
+    composeUploading.value = false
+  }
+}
+
 const openCompose = () => {
   if (!authStore.isLoggedIn) {
     router.push('/auth')
@@ -171,18 +228,23 @@ const handleLogout = () => {
 const closeComposeModal = () => {
   showComposeModal.value = false
   globalPostContent.value = ''
+  removeComposeImage()
 }
 
 const handleGlobalPublish = async () => {
-  if (!globalPostContent.value.trim()) return
+  if (!globalPostContent.value.trim() || composeUploading.value) return
   try {
     const res = await apiFetch('/moments', {
       method: 'POST',
-      body: JSON.stringify({ content: globalPostContent.value.trim() }),
+      body: JSON.stringify({
+        content: globalPostContent.value.trim(),
+        image_url: composeImageUrl.value || '',
+      }),
     })
     if (res.ok) {
       globalPostContent.value = ''
       showComposeModal.value = false
+      removeComposeImage()
       if (route.path !== '/home') {
         await router.push('/home')
       }
@@ -518,6 +580,7 @@ body {
 }
 .compose-media-row {
   display: flex;
+  align-items: center;
   gap: 10px;
   margin: 14px 0;
 }
@@ -533,13 +596,52 @@ body {
   font-size: 1.4rem;
   color: #cfcfd4;
 }
-.media-tile-2 {
-  background: linear-gradient(135deg, #ffe8ec, #fff3f5);
-  border: none;
+.media-add {
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
 }
-.media-tile-3 {
-  background: linear-gradient(135deg, #eaf3ff, #f3f8ff);
+.media-add:hover {
+  border-color: var(--xhs-red);
+  color: var(--xhs-red);
+}
+.media-uploading {
+  font-size: 0.7rem;
+  color: var(--xhs-red);
+  font-weight: 700;
+}
+.media-preview {
+  position: relative;
+  width: 78px;
+  height: 78px;
+  border-radius: 12px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.media-preview-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.media-remove {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
   border: none;
+  font-size: 0.62rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.compose-hint-inline {
+  font-size: 0.76rem;
+  color: var(--xhs-text-3);
+  flex: 1;
 }
 .compose-footer-row {
   display: flex;
