@@ -260,7 +260,20 @@ SOURCES = [
     {"name": "36氪", "kind": "rss",
      "url": "https://36kr.com/feed",
      "parser": parse_rss},
-    # —— 聚合源兜底（国内热榜聚合，境外访问成功率较高）——
+    # —— 国内官方直连（数据与原站一致；国内环境可用，Render 上常 403 则跳过）——
+    {"name": "微博热搜", "kind": "json", "direct": True,
+     "url": "https://weibo.com/ajax/side/hotSearch",
+     "parser": parse_weibo, "referer": "https://weibo.com/"},
+    {"name": "知乎热榜", "kind": "json", "direct": True,
+     "url": "https://www.zhihu.com/api/v3/feed/topstory/hot-lists/total?limit=50&desktop=true",
+     "parser": parse_zhihu, "referer": "https://www.zhihu.com/hot"},
+    {"name": "百度热搜", "kind": "json", "direct": True,
+     "url": "https://top.baidu.com/api/board?platform=wise&tab=realtime",
+     "parser": parse_baidu, "referer": "https://top.baidu.com/board?tab=realtime"},
+    {"name": "今日头条", "kind": "json", "direct": True,
+     "url": "https://www.toutiao.com/hot-event/hot-board/?origin=toutiao_pc",
+     "parser": parse_toutiao, "referer": "https://www.toutiao.com/"},
+    # —— 聚合源兜底（直连不可用时才用；同为同名来源时会被直连覆盖）——
     {"name": "微博热搜", "kind": "json", "url": "https://api.vvhan.com/api/hotlist/wbHot",
      "parser": parse_vvhan, "referer": "https://api.vvhan.com/"},
     {"name": "知乎热榜", "kind": "json", "url": "https://api.vvhan.com/api/hotlist/zhihuHot",
@@ -269,16 +282,6 @@ SOURCES = [
      "parser": parse_vvhan, "referer": "https://api.vvhan.com/"},
     {"name": "今日头条", "kind": "json", "url": "https://api.vvhan.com/api/hotlist/toutiao",
      "parser": parse_vvhan, "referer": "https://api.vvhan.com/"},
-    # —— 国内直连（国内环境可用；Render 上失败则跳过）——
-    {"name": "微博热搜", "kind": "json", "url": "https://weibo.com/ajax/side/hotSearch",
-     "parser": parse_weibo, "referer": "https://weibo.com/"},
-    {"name": "知乎热榜", "kind": "json",
-     "url": "https://www.zhihu.com/api/v3/feed/topstory/hot-lists/total?limit=50&desktop=true",
-     "parser": parse_zhihu, "referer": "https://www.zhihu.com/hot"},
-    {"name": "百度热搜", "kind": "json", "url": "https://top.baidu.com/api/board?platform=wise&tab=realtime",
-     "parser": parse_baidu, "referer": "https://top.baidu.com/board?tab=realtime"},
-    {"name": "今日头条", "kind": "json", "url": "https://www.toutiao.com/hot-event/hot-board/?origin=toutiao_pc",
-     "parser": parse_toutiao, "referer": "https://www.toutiao.com/"},
 ]
 
 _CRAWL_LOCK = asyncio.Lock()
@@ -335,12 +338,19 @@ async def crawl_all() -> int:
     async with _CRAWL_LOCK:
         tasks = [asyncio.create_task(_fetch_one(cfg)) for cfg in SOURCES]
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        collected: list[dict] = []
+
+        # 按来源名分组：直连官方源优先于聚合源（同名时直连拿到数据就丢弃聚合数据）
+        grouped: dict[str, dict[str, list[dict]]] = {}
         for cfg, result in zip(SOURCES, results):
             if isinstance(result, Exception):
                 print(f"⚠️ [NEWS] 抓取「{cfg['name']}」失败: {result}")
                 continue
-            collected.extend(result)
+            bucket = grouped.setdefault(cfg["name"], {"direct": [], "agg": []})
+            bucket["direct" if cfg.get("direct") else "agg"].extend(result)
+
+        collected: list[dict] = []
+        for bucket in grouped.values():
+            collected.extend(bucket["direct"] if bucket["direct"] else bucket["agg"])
 
         # 同一来源内按 external_id/title 去重，保留热度更高的
         dedup: dict[tuple[str, str], dict] = {}

@@ -73,9 +73,25 @@ async def get_following_moments(
     offset: int = Query(0, ge=0),
     current_user: dict = Depends(get_current_user),
 ):
-    """关注流：仅本人及已同意好友的动态（分页）。"""
+    """关注流：仅本人及已同意好友的动态（分页，返回 total / has_more）。"""
     username = current_user["username"]
     async with db_conn() as conn:
+        total = await conn.fetchval(
+            """
+            SELECT COUNT(*)
+            FROM moments m
+            JOIN users u ON m.username = u.username
+            WHERE m.username IN (
+                SELECT CASE WHEN f.username = $1 THEN f.friend_username ELSE f.username END
+                FROM friendships f
+                WHERE (f.username = $2 OR f.friend_username = $3) AND f.status = 'accepted'
+            ) OR m.username = $4
+            """,
+            username,
+            username,
+            username,
+            username,
+        ) or 0
         records = await conn.fetch(
             f"""
             SELECT {MOMENT_COLUMNS}
@@ -96,7 +112,12 @@ async def get_following_moments(
             limit,
             offset,
         )
-    return {"success": True, "moments": [serialize_moment(r) for r in records]}
+    return {
+        "success": True,
+        "total": int(total),
+        "has_more": offset + len(records) < int(total),
+        "moments": [serialize_moment(r) for r in records],
+    }
 
 
 @router.get("/user/{target_username}")
