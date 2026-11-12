@@ -1,0 +1,1 @@
+import{i as e,r as t,t as n}from"./index-zfTRwIEZ.js";var r=e({baseURL:`https://drive-model-backend.onrender.com`,getToken:()=>t().token,onUnauthorized:()=>{t().logout(),n.currentRoute.value.path!==`/login`&&n.push(`/login`)}});export{r as t};
