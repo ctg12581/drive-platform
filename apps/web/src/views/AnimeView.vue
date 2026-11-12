@@ -1,9 +1,9 @@
-<!-- src/views/AnimeView.vue · 小红书风格动漫图鉴（中日美 · 按动漫分类） -->
+<!-- src/views/AnimeView.vue · 动漫图鉴（以动漫作品为主 · 中日美） -->
 <template>
   <div class="anime-container">
     <div class="anime-header">
       <h2 class="anime-title">🌏 动漫图鉴</h2>
-      <p class="anime-subtitle">中日美三地 · 按动漫作品分类浏览</p>
+      <p class="anime-subtitle">中日美三地 · 以动漫作品为分类浏览</p>
     </div>
 
     <!-- 地区筛选 -->
@@ -32,50 +32,73 @@
       </div>
     </div>
 
-    <!-- 作品内：角色列表 -->
+    <!-- 动漫主页：以作品为主，下面才是角色 -->
     <template v-if="activeWork">
-      <div class="work-back-bar">
-        <button class="work-back-btn" @click="backToWorks">‹ 全部作品</button>
-        <div class="work-back-title">
-          <span class="anime-region-badge inline" :style="{ background: themeOf(activeWork.region).solid }">
-            {{ activeWork.region_emoji }} {{ activeWork.region_name }}
-          </span>
-          <strong>{{ activeWork.work }}</strong>
-          <span class="work-back-count">{{ activeWork.count }} 个角色</span>
+      <div class="work-hero">
+        <button class="work-back-btn" @click="backToWorks">‹ 返回动漫列表</button>
+        <div class="work-hero-body">
+          <div class="work-hero-poster" :style="{ background: themeOf(activeWork.region).grad }">
+            <img
+              v-if="activeWork.cover"
+              class="work-hero-poster-img"
+              :src="activeWork.cover"
+              :alt="activeWork.work"
+              @error="onWorkImgError($event, activeWork)"
+            />
+            <span v-else class="work-hero-poster-emoji">{{ activeWork.region_emoji || '📺' }}</span>
+          </div>
+          <div class="work-hero-info">
+            <span class="anime-region-badge inline" :style="{ background: themeOf(activeWork.region).solid }">
+              {{ activeWork.region_emoji }} {{ activeWork.region_name }}
+            </span>
+            <h2 class="work-hero-title">{{ activeWork.work }}</h2>
+            <div class="work-hero-en" v-if="activeWork.work_en && activeWork.work_en !== activeWork.work">
+              {{ activeWork.work_en }}
+            </div>
+            <div class="work-hero-tags">
+              <span v-for="t in (activeWork.tags || [])" :key="t" class="xhs-tag">{{ t }}</span>
+            </div>
+            <div class="work-hero-meta">
+              <span class="work-hero-meta-item"><strong>{{ activeWork.count }}</strong> 位角色</span>
+              <span class="work-hero-meta-item">{{ activeWork.region_full }}</span>
+            </div>
+          </div>
         </div>
       </div>
 
+      <div class="section-title">角色<template v-if="!loadingChars">（{{ characters.length }}）</template></div>
+
       <div v-if="loadingChars" class="anime-loading">加载角色中…</div>
       <div v-else-if="characters.length === 0" class="xhs-empty">
-        <div style="font-size:2.5rem;margin-bottom:12px;">🎌</div>
+        <div style="font-size:2.5rem;margin-bottom:12px;">🎭</div>
         <p>没有找到匹配的角色</p>
       </div>
       <div v-else class="anime-grid">
         <div v-for="(c, idx) in characters" :key="c.id" class="anime-card" @click="openDetail(c.id)">
           <div class="anime-cover" :style="coverStyle(c, idx)">
             <img v-if="c.image_url" class="anime-cover-img" :src="c.image_url" :alt="c.name" loading="lazy" @error="onImgError($event, c)" />
-            <span v-else class="anime-cover-emoji">{{ c.avatar || '🎬' }}</span>
+            <span v-else class="anime-cover-emoji">{{ c.avatar || '🎭' }}</span>
           </div>
           <div class="anime-card-info">
             <div class="anime-card-name">{{ c.name }}</div>
             <div class="anime-card-work" v-if="c.name_en">{{ c.name_en }}</div>
             <div class="anime-card-tags">
-              <span v-for="t in c.tags" :key="t" class="xhs-tag">{{ t }}</span>
+              <span v-for="t in c.tags.slice(0, 3)" :key="t" class="xhs-tag">{{ t }}</span>
             </div>
           </div>
         </div>
       </div>
     </template>
 
-    <!-- 作品列表：按动漫分类 -->
+    <!-- 动漫列表：作品为主 -->
     <template v-else>
       <div class="anime-section-hint" v-if="!loadingWorks">
-        共 {{ totalWorks }} 部作品<template v-if="works.length < totalWorks">，已加载 {{ works.length }}</template>
+        共 {{ totalWorks }} 部动漫<template v-if="works.length < totalWorks">，已加载 {{ works.length }}</template>
       </div>
-      <div v-if="loadingWorks" class="anime-loading">加载作品分类中…</div>
+      <div v-if="loadingWorks" class="anime-loading">加载动漫列表…</div>
       <div v-else-if="works.length === 0" class="xhs-empty">
         <div style="font-size:2.5rem;margin-bottom:12px;">📚</div>
-        <p>没有找到匹配的动漫作品</p>
+        <p>没有找到匹配的动漫</p>
       </div>
       <template v-else>
         <div class="work-grid">
@@ -85,30 +108,33 @@
                 {{ w.region_emoji }} {{ w.region_name }}
               </span>
               <img v-if="w.cover" class="work-cover-img" :src="w.cover" :alt="w.work" loading="lazy" @error="onWorkImgError($event, w)" />
-              <span v-else class="work-cover-emoji">{{ w.region_emoji || '🎬' }}</span>
+              <span v-else class="work-cover-emoji">{{ w.region_emoji || '📺' }}</span>
             </div>
             <div class="work-info">
               <div class="work-name">{{ w.work }}</div>
               <div class="work-sub" v-if="w.work_en && w.work_en !== w.work">{{ w.work_en }}</div>
-              <div class="work-count">{{ w.count }} 个角色 ›</div>
+              <div class="work-tags">
+                <span v-for="t in (w.tags || []).slice(0, 3)" :key="t" class="xhs-tag">{{ t }}</span>
+              </div>
+              <div class="work-count">{{ w.count }} 位角色 ›</div>
             </div>
           </div>
         </div>
         <div v-if="worksHasMore" class="load-more-wrap">
           <button class="load-more-btn" :disabled="loadingMoreWorks" @click="loadMoreWorks">
-            {{ loadingMoreWorks ? '加载中…' : '加载更多作品' }}
+            {{ loadingMoreWorks ? '加载中…' : '加载更多动漫' }}
           </button>
         </div>
       </template>
     </template>
 
-    <!-- 详情弹窗 -->
+    <!-- 角色详情弹窗 -->
     <div v-if="detail" class="modal-backdrop" @click.self="detail = null">
       <div class="modal-card anime-detail-card">
         <button class="modal-close" @click="detail = null">✕</button>
         <div class="anime-detail-cover" :style="{ background: detailTheme.grad }">
           <img v-if="detail.image_url" class="anime-detail-cover-img" :src="detail.image_url" :alt="detail.name" />
-          <span v-else class="anime-detail-cover-emoji">{{ detail.avatar || '🎬' }}</span>
+          <span v-else class="anime-detail-cover-emoji">{{ detail.avatar || '🎭' }}</span>
         </div>
         <div class="anime-detail-inner">
           <div class="anime-detail-header">
@@ -170,7 +196,7 @@ const activeRegion = ref('all')
 const activeWork = ref(null)
 const detail = ref(null)
 
-// 作品列表分页（角色数据进入作品后再拉取）
+// 动漫列表分页（角色数据进入某部动漫后再拉取）
 const WORKS_PAGE_SIZE = 30
 const worksPage = ref(1)
 const worksHasMore = ref(false)
@@ -186,18 +212,9 @@ const REGION_THEME = {
 const ALL_THEME = { solid: '#1f1f1f', soft: 'rgba(0, 0, 0, 0.06)', grad: 'linear-gradient(135deg,#f2f2f5 0%,#fafafa 100%)' }
 const themeOf = (key) => (key && REGION_THEME[key]) || ALL_THEME
 
-const regionEmoji = (key) => regions.value.find((r) => r.key === key)?.emoji || '🌏'
-const regionName = (key) => regions.value.find((r) => r.key === key)?.name || ''
-
-const regionActiveStyle = (key) => {
-  const t = themeOf(key)
-  return { background: t.solid, borderColor: t.solid, color: '#fff' }
-}
-const badgeStyle = (key) => ({ background: themeOf(key).solid })
-
 const detailTheme = computed(() => themeOf(detail.value?.region))
 const searchPlaceholder = computed(() =>
-  activeWork.value ? '搜索该作品的角色…' : '搜索动漫作品 / 角色…',
+  activeWork.value ? '搜索该动漫的角色…' : '搜索动漫…',
 )
 
 const GRADS = [
@@ -243,7 +260,7 @@ const fetchWorksPage = async (targetPage) => {
   qs.set('page_size', String(WORKS_PAGE_SIZE))
   const res = await apiFetch(`/anime/works?${qs.toString()}`)
   const json = await res.json()
-  if (!res.ok || !json.success) throw new Error('获取作品分类失败')
+  if (!res.ok || !json.success) throw new Error('获取动漫列表失败')
   return json
 }
 
@@ -287,7 +304,7 @@ const loadMoreWorks = async () => {
     worksHasMore.value = !!data.has_more
     totalWorks.value = data.total ?? totalWorks.value
   } catch {
-    /* 单次加载失败保留已加载作品 */
+    /* 单次加载失败保留已加载动漫 */
   } finally {
     loadingMoreWorks.value = false
   }
@@ -456,6 +473,7 @@ onMounted(() => {
 
 .anime-loading { text-align: center; color: var(--xhs-text-3); padding: 60px 0; }
 .anime-section-hint { font-size: 0.76rem; color: var(--xhs-text-3); padding: 0 4px 10px; }
+.section-title { font-size: 0.95rem; font-weight: 800; color: var(--xhs-text); margin: 2px 4px 10px; }
 
 /* 角色瀑布流 */
 .anime-grid { columns: 2; column-gap: 10px; }
@@ -512,12 +530,12 @@ onMounted(() => {
 .anime-card-work { font-size: 0.74rem; color: var(--xhs-text-3); margin-top: 2px; }
 .anime-card-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
 
-/* 作品分类网格 */
-.work-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+/* 动漫列表网格（海报卡片） */
+.work-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
 .work-card {
   background: #fff;
   border: 1px solid #f2f2f4;
-  border-radius: 14px;
+  border-radius: 16px;
   overflow: hidden;
   cursor: pointer;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
@@ -527,18 +545,27 @@ onMounted(() => {
 .work-card:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(0, 0, 0, 0.09); }
 .work-cover {
   position: relative;
-  height: 150px;
+  aspect-ratio: 3 / 4;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
 }
-.work-cover-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; object-position: center; padding: 8px; box-sizing: border-box; }
-.work-cover-emoji { font-size: 2.4rem; }
-.work-info { padding: 9px 10px 11px; }
+.work-cover-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  padding: 10px;
+  box-sizing: border-box;
+}
+.work-cover-emoji { font-size: 2.6rem; }
+.work-info { padding: 9px 11px 12px; }
 .work-name {
   font-weight: 800;
-  font-size: 0.9rem;
+  font-size: 0.92rem;
   color: var(--xhs-text);
   line-height: 1.3;
   display: -webkit-box;
@@ -554,7 +581,8 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.work-count { font-size: 0.72rem; color: var(--xhs-red); font-weight: 700; margin-top: 6px; }
+.work-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 7px; }
+.work-count { font-size: 0.72rem; color: var(--xhs-red); font-weight: 700; margin-top: 8px; }
 .load-more-wrap { display: flex; justify-content: center; padding: 14px 0 4px; }
 .load-more-btn {
   border: 1.5px solid #ececf0;
@@ -568,16 +596,9 @@ onMounted(() => {
 }
 .load-more-btn:disabled { opacity: 0.6; cursor: default; }
 
-/* 作品返回栏 */
-.work-back-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 2px 12px;
-  flex-wrap: wrap;
-}
+/* 动漫主页 Hero */
+.work-hero { padding: 2px 2px 14px; }
 .work-back-btn {
-  flex: 0 0 auto;
   border: 1.5px solid #ececf0;
   background: #f6f6f8;
   color: var(--xhs-text-2, #555);
@@ -586,11 +607,30 @@ onMounted(() => {
   font-size: 0.8rem;
   font-weight: 700;
   cursor: pointer;
+  margin-bottom: 12px;
 }
-.work-back-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.95rem; color: var(--xhs-text); }
-.work-back-count { font-size: 0.74rem; color: var(--xhs-text-3); }
+.work-hero-body { display: flex; gap: 14px; }
+.work-hero-poster {
+  flex: 0 0 132px;
+  width: 132px;
+  aspect-ratio: 3 / 4;
+  border-radius: 14px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.work-hero-poster-img { width: 100%; height: 100%; object-fit: contain; padding: 8px; box-sizing: border-box; }
+.work-hero-poster-emoji { font-size: 2.6rem; }
+.work-hero-info { flex: 1; min-width: 0; }
+.work-hero-title { margin: 6px 0 0; font-size: 1.15rem; font-weight: 900; color: var(--xhs-text); line-height: 1.3; }
+.work-hero-en { font-size: 0.76rem; color: var(--xhs-text-3); margin-top: 3px; }
+.work-hero-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.work-hero-meta { display: flex; gap: 14px; margin-top: 12px; font-size: 0.8rem; color: var(--xhs-text-3); }
+.work-hero-meta-item strong { color: var(--xhs-text); font-size: 0.95rem; }
 
-/* 详情弹窗 */
+/* 角色详情弹窗 */
 .modal-backdrop {
   position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); backdrop-filter: blur(2px);
   display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px;
