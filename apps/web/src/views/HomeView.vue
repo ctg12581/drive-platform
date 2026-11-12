@@ -1,10 +1,13 @@
 <!-- src/views/HomeView.vue · 小红书瀑布流首页 -->
 <template>
   <div class="feed-container">
-    <!-- 顶部频道切换（热榜已移至底部导航，此处仅保留推荐/关注） -->
+    <!-- 顶部频道切换（热榜已移至底部导航，推荐拆分为国内/国外） -->
     <div v-if="currentSubTab !== 'rank'" class="feed-tabs">
-      <button @click="changeTab('hot')" :class="['feed-tab-btn', { active: currentSubTab === 'hot' }]">
-        <span class="tab-text">推荐</span>
+      <button @click="changeTab('cn')" :class="['feed-tab-btn', { active: currentSubTab === 'cn' }]">
+        <span class="tab-text">国内</span>
+      </button>
+      <button @click="changeTab('intl')" :class="['feed-tab-btn', { active: currentSubTab === 'intl' }]">
+        <span class="tab-text">国外</span>
       </button>
       <button @click="changeTab('following')" :class="['feed-tab-btn', { active: currentSubTab === 'following' }]">
         <span class="tab-text">关注</span>
@@ -19,7 +22,7 @@
     <!-- ============ 推荐 / 热榜：瀑布流卡片 ============ -->
     <section v-if="currentSubTab !== 'following'" class="feed-section">
       <div class="section-bar">
-        <span class="section-title-text">{{ currentSubTab === 'rank' ? '🏆 热榜总榜' : '🔥 实时热点' }}</span>
+        <span class="section-title-text">{{ currentSubTab === 'rank' ? '🏆 热榜总榜' : currentSubTab === 'intl' ? '🌍 国外热点' : '🔥 国内热点' }}</span>
         <span class="section-count">
           {{ activeList.total }} 条<span v-if="activeList.updatedAt"> · {{ formatLocalTime(activeList.updatedAt) }}</span>
         </span>
@@ -185,8 +188,8 @@ const router = useRouter()
 
 // 频道可由底部「热榜」入口通过 ?tab=rank 打开
 const queryTab = route.query.tab
-const initialTab = queryTab === 'rank' || queryTab === 'following' ? queryTab : 'hot'
-const currentSubTab = ref(initialTab) // 'hot' 推荐, 'rank' 热榜, 'following' 关注
+const initialTab = queryTab === 'rank' || queryTab === 'following' || queryTab === 'intl' ? queryTab : 'cn'
+const currentSubTab = ref(initialTab) // 'cn' 国内, 'intl' 国外, 'rank' 热榜, 'following' 关注
 const posts = ref(momentsStore.cachedPosts)
 const loading = ref(posts.value.length === 0)
 const activeProfile = ref(null)
@@ -200,12 +203,16 @@ const followingHasMore = ref(false)
 // 热点 / 榜单两个列表的分页状态（每页 20 条）
 const NEWS_PAGE_SIZE = 20
 const lists = reactive({
-  hot: { items: [], loading: false, page: 1, total: 0, hasMore: false, updatedAt: null },
+  cn: { items: [], loading: false, page: 1, total: 0, hasMore: false, updatedAt: null },
+  intl: { items: [], loading: false, page: 1, total: 0, hasMore: false, updatedAt: null },
   rank: { items: [], loading: false, page: 1, total: 0, hasMore: false, updatedAt: null },
 })
 
-// 当前新闻列表（推荐 / 热榜共用）
-const activeList = computed(() => lists[currentSubTab.value === 'rank' ? 'rank' : 'hot'])
+// 当前列表：国内 / 国外 / 热榜
+const activeKey = computed(() =>
+  currentSubTab.value === 'rank' ? 'rank' : currentSubTab.value === 'intl' ? 'intl' : 'cn'
+)
+const activeList = computed(() => lists[activeKey.value])
 
 // ===== 瀑布流视觉辅助：封面渐变 / 表情 / 点赞数（确定性伪随机）=====
 const COVER_GRADIENTS = [
@@ -294,13 +301,19 @@ const formatHot = (value) => {
 
 const totalPages = (kind) => Math.max(1, Math.ceil((lists[kind].total || 0) / NEWS_PAGE_SIZE))
 
-const loadPage = async (kind, page = 1) => {
-  const st = lists[kind]
+const loadPage = async (key, page = 1) => {
+  const st = lists[key]
+  if (!st) return
   const target = Math.max(1, page)
   st.loading = true
   try {
-    const apiKind = kind === 'rank' ? 'rank' : 'news'
-    const res = await apiFetch(`/news/hot?page=${target}&page_size=${NEWS_PAGE_SIZE}&kind=${apiKind}`)
+    let url = `/news/hot?page=${target}&page_size=${NEWS_PAGE_SIZE}`
+    if (key === 'rank') {
+      url += '&kind=rank'
+    } else {
+      url += `&kind=news&region=${key === 'intl' ? 'intl' : 'cn'}`
+    }
+    const res = await apiFetch(url)
     const data = await res.json()
     if (res.ok && data.success) {
       st.items = data.news || []
@@ -395,14 +408,14 @@ const changeTab = (tab, fromRoute = false) => {
   if (tab === 'following') {
     posts.value = []
     fetchTimeline(1)
-  } else if (tab === 'hot' && lists.hot.items.length === 0) {
-    loadPage('hot', 1)
+  } else if ((tab === 'cn' || tab === 'intl') && lists[tab].items.length === 0) {
+    loadPage(tab, 1)
   } else if (tab === 'rank' && lists.rank.items.length === 0) {
     loadPage('rank', 1)
   }
   // 同步到路由 query，保证底部导航高亮（首页 / 热榜）正确
   if (!fromRoute) {
-    const query = tab === 'hot' ? {} : { tab }
+    const query = tab === 'cn' ? {} : { tab }
     router.replace({ path: '/home', query }).catch(() => {})
   }
 }
@@ -411,7 +424,7 @@ const changeTab = (tab, fromRoute = false) => {
 watch(
   () => route.query.tab,
   (t) => {
-    const target = t === 'rank' || t === 'following' ? t : 'hot'
+    const target = t === 'rank' || t === 'following' || t === 'intl' ? t : 'cn'
     if (target !== currentSubTab.value) changeTab(target, true)
   },
 )

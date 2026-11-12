@@ -15,6 +15,9 @@ from app.modules.news.crawler import crawl_all, trigger_background_crawl
 
 router = APIRouter(prefix="/news", tags=["News 热点新闻"])
 
+# 国内来源白名单（其余来源视为国外/海外来源），用于「国内 / 国外」分区
+DOMESTIC_SOURCES = ["微博热搜", "知乎热榜", "百度热搜", "今日头条", "36氪"]
+
 
 def serialize_db_row(row) -> dict:
     """把 hot_news 查询行序列化为前端结构。"""
@@ -37,31 +40,47 @@ async def get_hot_news(
     page_size: int = Query(20, ge=1, le=50),
     category: str = Query("", description="按分类过滤，留空返回全部"),
     kind: str = Query("", description="按板块过滤：news 热点 / rank 榜单，留空返回全部"),
+    region: str = Query("", description="按地区过滤：cn 国内 / intl 国外，留空返回全部"),
 ):
     """热点/榜单列表（分页）：读定时抓取的真实快照；无数据时返回空并触发后台补抓。
 
-    返回 total / page / page_size / has_more，前端据此做分页。
+    region=cn 只返回国内来源，region=intl 只返回国外来源（按抓取来源划分）。
     """
     category = category.strip()
     kind = kind.strip()
+    region = region.strip().lower()
     offset = (page - 1) * page_size
+
+    params: list = [category, kind]
+    region_clause = ""
+    if region in ("cn", "intl"):
+        params.append(DOMESTIC_SOURCES)
+        idx = len(params)
+        if region == "cn":
+            # 国内：国内来源，且分类不是「国际」
+            region_clause = f"AND source = ANY(${idx}::text[]) AND category <> '国际'"
+        else:
+            # 国外：海外来源，或任何来源下的「国际」类内容
+            region_clause = f"AND (NOT (source = ANY(${idx}::text[])) OR category = '国际')"
+
     try:
         async with db_conn() as conn:
             meta = await conn.fetchrow(
-                """
+                f"""
                 SELECT COUNT(*) AS total, MAX(fetched_at) AS updated
                 FROM hot_news
                 WHERE fetched_at > now() - interval '24 hours'
                   AND ($1 = '' OR category = $1)
                   AND ($2 = '' OR kind = $2)
+                  {region_clause}
                 """,
-                category,
-                kind,
+                *params,
             )
             total = int(meta["total"] or 0) if meta else 0
             if total > 0:
+                limit_idx, offset_idx = len(params) + 1, len(params) + 2
                 records = await conn.fetch(
-                    """
+                    f"""
                     SELECT id, source, category, title, summary, url, hot, image_url, fetched_at
                     FROM (
                         SELECT id, source, category, title, summary, url, hot, image_url, fetched_at,
@@ -70,12 +89,12 @@ async def get_hot_news(
                         WHERE fetched_at > now() - interval '24 hours'
                           AND ($1 = '' OR category = $1)
                           AND ($2 = '' OR kind = $2)
+                          {region_clause}
                     ) t
                     ORDER BY rn ASC, hot DESC, id ASC
-                    LIMIT $3 OFFSET $4
+                    LIMIT ${limit_idx} OFFSET ${offset_idx}
                     """,
-                    category,
-                    kind,
+                    *params,
                     page_size,
                     offset,
                 )
