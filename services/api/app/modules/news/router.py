@@ -71,7 +71,7 @@ async def get_hot_news(
                 FROM hot_news
                 WHERE fetched_at > now() - interval '24 hours'
                   AND ($1 = '' OR category = $1)
-                  AND ($2 = '' OR kind = $2)
+                  AND ($2 = '' OR $2 = 'news' OR kind = $2)
                   {region_clause}
                 """,
                 *params,
@@ -88,7 +88,7 @@ async def get_hot_news(
                         FROM hot_news
                         WHERE fetched_at > now() - interval '24 hours'
                           AND ($1 = '' OR category = $1)
-                          AND ($2 = '' OR kind = $2)
+                          AND ($2 = '' OR $2 = 'news' OR kind = $2)
                           {region_clause}
                     ) t
                     ORDER BY rn ASC, hot DESC, id ASC
