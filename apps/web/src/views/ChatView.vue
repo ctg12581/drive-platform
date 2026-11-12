@@ -702,15 +702,14 @@ const getCurrentTimeLabel = () => {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 .self-row .msg-bubble {
-  background: #eef0f3;
-  color: var(--xhs-text);
+  background: var(--xhs-red);
+  color: #fff;
   border-radius: 18px 18px 4px 18px;
 }
 .peer-row .msg-bubble {
   background: #fff;
   color: var(--xhs-text);
   border-radius: 18px 18px 18px 4px;
-  border: 1px solid #f0f0f2;
 }
 
 .msg-meta {
@@ -721,8 +720,8 @@ const getCurrentTimeLabel = () => {
   margin-top: 4px;
   font-size: 0.66rem;
 }
-.read-status { opacity: 0.9; color: var(--xhs-text-3); font-weight: 700; }
-.read-status.status-read { color: #1f9d55; }
+.read-status { opacity: 0.75; color: #ffe0e5; font-weight: 700; }
+.read-status.status-read { color: #fff; opacity: 0.9; }
 .msg-time { display: block; opacity: 0.75; text-align: right; }
 .peer-row .read-status { display: none !important; }
 .peer-row .msg-meta { justify-content: flex-end; }
