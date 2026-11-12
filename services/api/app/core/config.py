@@ -16,8 +16,10 @@ class Settings(BaseSettings):
     # 默认 7 天（原为 365 天，过长且不可吊销）
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7
 
-    # 数据库连接池上限（每个进程），避免每请求新建连接
-    DB_POOL_MAX_CONN: int = 10
+    # 数据库连接池上限（每个进程），需与 FastAPI 线程池规模匹配
+    DB_POOL_MAX_CONN: int = 20
+    # 单条 SQL 超时（毫秒），防止慢查询长期占用连接
+    DB_STATEMENT_TIMEOUT_MS: int = 15000
 
     # 逗号分隔的额外允许跨域来源，追加到内置白名单之后
     FRONTEND_ORIGINS: str = ""

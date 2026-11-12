@@ -17,7 +17,7 @@ def resolve_friend_status(status: str | None, requester: str | None, current_use
 
 
 @router.get("/users")
-async def search_users(q: str, current_user: dict = Depends(get_current_user)):
+def search_users(q: str, current_user: dict = Depends(get_current_user)):
     """模糊检索全网用户（排除自己），并带上与当前用户的好友关系状态。"""
     username = current_user["username"]
     query_str = f"%{q.strip()}%"

@@ -155,6 +155,8 @@ const changeTab = (tab) => {
 // 💡 后台静默检测新发布的帖子数量
 const checkNewPosts = async () => {
   if (!lastFetchedTime) return
+  // 页面不可见时跳过轮询，减少后台请求
+  if (typeof document !== 'undefined' && document.hidden) return
   try {
     const res = await apiFetch(`/moments/count?since=${encodeURIComponent(lastFetchedTime)}`)
     const data = await res.json()

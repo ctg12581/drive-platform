@@ -19,7 +19,7 @@ class ProfileUpdateSchema(BaseModel):
 
 
 @router.post("/register")
-async def register(user: UserAuthSchema):
+def register(user: UserAuthSchema):
     # 'admin' 为系统保留账号，禁止通过公开注册抢占（管理员由 ADMIN_PASSWORD 引导）
     if user.username.lower() == "admin":
         raise HTTPException(status_code=400, detail="该用户名为系统保留，无法注册")
@@ -36,7 +36,7 @@ async def register(user: UserAuthSchema):
 
 
 @router.post("/login")
-async def login(user: UserAuthSchema):
+def login(user: UserAuthSchema):
     with db_cursor() as cur:
         cur.execute("SELECT password_hash FROM users WHERE username = %s", (user.username,))
         record = cur.fetchone()
@@ -52,7 +52,7 @@ async def login(user: UserAuthSchema):
 
 
 @router.post("/profile")
-async def update_profile(data: ProfileUpdateSchema, current_user: dict = Depends(get_current_user)):
+def update_profile(data: ProfileUpdateSchema, current_user: dict = Depends(get_current_user)):
     with db_cursor(commit=True) as cur:
         cur.execute(
             "UPDATE users SET nickname = %s, avatar_url = %s WHERE username = %s",
@@ -62,7 +62,7 @@ async def update_profile(data: ProfileUpdateSchema, current_user: dict = Depends
 
 
 @router.get("/profile/{target_username}")
-async def get_user_profile(target_username: str):
+def get_user_profile(target_username: str):
     with db_cursor() as cur:
         cur.execute(
             "SELECT username, COALESCE(nickname, username), COALESCE(avatar_url, '👤') "

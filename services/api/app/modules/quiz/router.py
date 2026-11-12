@@ -31,7 +31,7 @@ class CreateQuestionSchema(BaseModel):
 
 
 @router.get("/questions")
-async def get_available_questions(current_user: dict = Depends(get_current_user)):
+def get_available_questions(current_user: dict = Depends(get_current_user)):
     """系统公共题库 + 我创建的私有题目。"""
     with db_cursor() as cur:
         cur.execute(
@@ -53,7 +53,7 @@ async def get_available_questions(current_user: dict = Depends(get_current_user)
 
 
 @router.post("/questions")
-async def create_custom_question(data: CreateQuestionSchema, current_user: dict = Depends(get_current_user)):
+def create_custom_question(data: CreateQuestionSchema, current_user: dict = Depends(get_current_user)):
     """用户自主创建私有题目。"""
     with db_cursor(commit=True) as cur:
         cur.execute(
@@ -69,7 +69,7 @@ async def create_custom_question(data: CreateQuestionSchema, current_user: dict 
 
 
 @router.get("/my-config")
-async def get_my_quiz_config(current_user: dict = Depends(get_current_user)):
+def get_my_quiz_config(current_user: dict = Depends(get_current_user)):
     """拉取我出的测验配置及正确答案（仅本人可读）。"""
     with db_cursor() as cur:
         cur.execute("SELECT id, title FROM user_quizzes WHERE username = %s", (current_user["username"],))
@@ -97,7 +97,7 @@ async def get_my_quiz_config(current_user: dict = Depends(get_current_user)):
 
 
 @router.post("/create")
-async def create_user_quiz(data: CreateQuizSchema, current_user: dict = Depends(get_current_user)):
+def create_user_quiz(data: CreateQuizSchema, current_user: dict = Depends(get_current_user)):
     """保存 / 更新我的测验。"""
     if not data.questions:
         raise HTTPException(status_code=400, detail="测验至少需要一道题目")
@@ -144,7 +144,7 @@ async def create_user_quiz(data: CreateQuizSchema, current_user: dict = Depends(
 
 
 @router.get("/friends-list")
-async def get_friends_quizzes(current_user: dict = Depends(get_current_user)):
+def get_friends_quizzes(current_user: dict = Depends(get_current_user)):
     """一键获取所有好友的测验列表与我的得分（单次查询，无 N+1）。"""
     username = current_user["username"]
     with db_cursor() as cur:
@@ -182,7 +182,7 @@ async def get_friends_quizzes(current_user: dict = Depends(get_current_user)):
 
 
 @router.get("/user/{target_username}")
-async def get_user_quiz(target_username: str, current_user: dict = Depends(get_current_user)):
+def get_user_quiz(target_username: str, current_user: dict = Depends(get_current_user)):
     """查看指定用户的测验题目（不含正确答案）。"""
     username = current_user["username"]
     with db_cursor() as cur:
@@ -223,7 +223,7 @@ async def get_user_quiz(target_username: str, current_user: dict = Depends(get_c
 
 
 @router.post("/submit")
-async def submit_quiz_answers(data: SubmitAnswersSchema, current_user: dict = Depends(get_current_user)):
+def submit_quiz_answers(data: SubmitAnswersSchema, current_user: dict = Depends(get_current_user)):
     """提交答题卡并计算默契度。"""
     with db_cursor(commit=True) as cur:
         cur.execute(

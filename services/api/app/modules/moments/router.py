@@ -33,7 +33,7 @@ def serialize_moment(row) -> dict:
 
 
 @router.post("")
-async def create_moment(data: MomentCreateSchema, current_user: dict = Depends(get_current_user)):
+def create_moment(data: MomentCreateSchema, current_user: dict = Depends(get_current_user)):
     with db_cursor(commit=True) as cur:
         cur.execute(
             "INSERT INTO moments (username, content) VALUES (%s, %s)",
@@ -43,7 +43,7 @@ async def create_moment(data: MomentCreateSchema, current_user: dict = Depends(g
 
 
 @router.get("")
-async def get_all_moments(
+def get_all_moments(
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ):
@@ -59,7 +59,7 @@ async def get_all_moments(
 
 
 @router.get("/following")
-async def get_following_moments(
+def get_following_moments(
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     current_user: dict = Depends(get_current_user),
@@ -87,7 +87,7 @@ async def get_following_moments(
 
 
 @router.get("/user/{target_username}")
-async def get_user_moments(
+def get_user_moments(
     target_username: str,
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
@@ -103,7 +103,7 @@ async def get_user_moments(
 
 
 @router.get("/count")
-async def get_new_moments_count(since: str, current_user: dict = Depends(get_current_user)):
+def get_new_moments_count(since: str, current_user: dict = Depends(get_current_user)):
     """统计 since 之后新发布的动态数量（用于主页“新动态”气泡）。"""
     try:
         since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))

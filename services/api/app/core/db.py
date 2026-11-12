@@ -23,6 +23,8 @@ def get_pool() -> pool.ThreadedConnectionPool:
                     1,
                     max(1, settings.DB_POOL_MAX_CONN),
                     dsn=settings.DATABASE_URL,
+                    connect_timeout=10,
+                    options=f"-c statement_timeout={settings.DB_STATEMENT_TIMEOUT_MS}",
                 )
     return _pool
 
@@ -241,10 +243,29 @@ def _ensure_default_admin():
             print(f"✅ [DB] 已创建初始管理员 {username}")
 
 
+def _init_search_indexes():
+    """为模糊搜索启用 pg_trgm 与 GIN 索引；扩展不可用时优雅降级，不阻断启动。"""
+    try:
+        with db_cursor(commit=True) as cur:
+            cur.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm;")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_users_username_trgm "
+                "ON users USING gin (username gin_trgm_ops);"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_users_nickname_trgm "
+                "ON users USING gin (nickname gin_trgm_ops);"
+            )
+        print("✅ [DB] pg_trgm 搜索索引就绪")
+    except Exception as exc:  # noqa: BLE001 - 扩展受托管方限制时降级
+        print(f"⚠️ [DB] pg_trgm 搜索索引初始化跳过（搜索仍可用但为全表扫描）: {exc}")
+
+
 def init_global_tables():
     """在服务启动时统一建表、索引与历史数据迁移。失败会抛出以便启动阶段暴露问题。"""
     with db_cursor(commit=True) as cur:
         for statement in SCHEMA_STATEMENTS:
             cur.execute(statement)
+    _init_search_indexes()
     _ensure_default_admin()
     print("✅ [DB] 数据库表结构初始化成功")

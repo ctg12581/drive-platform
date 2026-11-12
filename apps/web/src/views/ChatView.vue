@@ -76,7 +76,7 @@
 
         <!-- 对话消息池 -->
         <div class="chat-body" id="chatFlow">
-          <div v-for="(msg, idx) in messages" :key="idx" 
+          <div v-for="(msg, idx) in messages" :key="msg.id || msg.client_id || idx" 
                :class="['message-row', msg.system ? 'sys-row' : (msg.self ? 'self-row' : 'peer-row')]">
             
             <!-- 气泡主体 -->

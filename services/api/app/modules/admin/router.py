@@ -1,7 +1,7 @@
 # app/modules/admin/router.py
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from app.core.db import db_cursor
@@ -11,7 +11,7 @@ from app.modules.auth.service import get_current_user
 router = APIRouter(prefix="/admin", tags=["Admin 后台管理模块"])
 
 
-async def get_current_admin(current_user: dict = Depends(get_current_user)):
+def get_current_admin(current_user: dict = Depends(get_current_user)):
     """仅允许数据库 is_admin 为真的账号访问后台接口。"""
     with db_cursor() as cur:
         cur.execute("SELECT is_admin FROM users WHERE username = %s", (current_user["username"],))
@@ -34,7 +34,7 @@ class BulkImportSchema(BaseModel):
 
 
 @router.get("/dashboard/stats", dependencies=[Depends(get_current_admin)])
-async def get_dashboard_stats():
+def get_dashboard_stats():
     with db_cursor() as cur:
         cur.execute("SELECT COUNT(*) FROM users")
         total_users = cur.fetchone()[0]
@@ -60,7 +60,7 @@ async def get_dashboard_stats():
 
 
 @router.get("/quiz/questions", dependencies=[Depends(get_current_admin)])
-async def admin_get_questions():
+def admin_get_questions():
     with db_cursor() as cur:
         cur.execute(
             "SELECT id, question_text, options FROM quiz_questions "
@@ -74,7 +74,7 @@ async def admin_get_questions():
 
 
 @router.post("/quiz/questions", dependencies=[Depends(get_current_admin)])
-async def admin_create_question(data: AdminQuestionSchema):
+def admin_create_question(data: AdminQuestionSchema):
     with db_cursor(commit=True) as cur:
         cur.execute(
             """
@@ -93,7 +93,7 @@ async def admin_create_question(data: AdminQuestionSchema):
 
 
 @router.delete("/quiz/questions/{question_id}", dependencies=[Depends(get_current_admin)])
-async def admin_delete_question(question_id: int):
+def admin_delete_question(question_id: int):
     with db_cursor(commit=True) as cur:
         cur.execute(
             """
@@ -106,21 +106,40 @@ async def admin_delete_question(question_id: int):
 
 
 @router.get("/users", dependencies=[Depends(get_current_admin)])
-async def admin_get_users():
+def admin_get_users(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+):
+    """用户监控列表：先分组聚合近 3 类计数，再一次性关联，避免逐用户子查询。"""
     with db_cursor() as cur:
         cur.execute(
             """
+            WITH moment_cnt AS (
+                SELECT username, COUNT(*) AS cnt FROM moments GROUP BY username
+            ),
+            drive_cnt AS (
+                SELECT username, COUNT(*) AS cnt FROM drive_records GROUP BY username
+            ),
+            attempt_cnt AS (
+                SELECT respondent_username AS username, COUNT(*) AS cnt
+                FROM quiz_attempts GROUP BY respondent_username
+            )
             SELECT u.id, u.username, COALESCE(u.nickname, u.username),
                    COALESCE(u.avatar_url, '👤'), u.created_at,
-                   (SELECT COUNT(*) FROM moments WHERE username = u.username) AS posts_count,
-                   (SELECT COUNT(*) FROM drive_records WHERE username = u.username) AS drive_count,
-                   (SELECT COUNT(*) FROM quiz_attempts WHERE respondent_username = u.username) AS attempts_count
+                   COALESCE(mc.cnt, 0), COALESCE(dc.cnt, 0), COALESCE(ac.cnt, 0),
+                   COUNT(*) OVER() AS total
             FROM users u
+            LEFT JOIN moment_cnt mc ON mc.username = u.username
+            LEFT JOIN drive_cnt dc ON dc.username = u.username
+            LEFT JOIN attempt_cnt ac ON ac.username = u.username
             ORDER BY u.created_at DESC
-            """
+            LIMIT %s OFFSET %s
+            """,
+            (limit, offset),
         )
         records = cur.fetchall()
 
+    total = records[0][8] if records else 0
     users = [
         {
             "id": r[0],
@@ -134,11 +153,11 @@ async def admin_get_users():
         }
         for r in records
     ]
-    return {"success": True, "users": users}
+    return {"success": True, "users": users, "total": total}
 
 
 @router.post("/quiz/questions/bulk", dependencies=[Depends(get_current_admin)])
-async def admin_bulk_import_questions(data: BulkImportSchema):
+def admin_bulk_import_questions(data: BulkImportSchema):
     try:
         with db_cursor(commit=True) as cur:
             for question in data.questions:

@@ -40,7 +40,7 @@ def build_synthesis(scores: dict[str, int]) -> str:
 
 
 @router.post("/evaluate")
-async def evaluate(data: DriveEvaluateRequest, current_user: dict = Depends(get_current_user)):
+def evaluate(data: DriveEvaluateRequest, current_user: dict = Depends(get_current_user)):
     """对当前登录用户的五维等级进行评测并记录历史。"""
     username = current_user["username"]
     grades = {

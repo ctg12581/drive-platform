@@ -9,6 +9,26 @@ import { apiFetch, buildChatWsUrl } from '../utils/api'
 const PENDING_POLL_INTERVAL = 20000
 const RECONNECT_DELAY = 5000
 
+// localStorage 写入防抖：高频聊天时避免每次都同步序列化整个缓存对象
+const writeTimers = {}
+function debouncedWrite(key, value, delay = 300) {
+  if (writeTimers[key]) clearTimeout(writeTimers[key])
+  writeTimers[key] = setTimeout(() => {
+    writeJSON(key, value)
+    delete writeTimers[key]
+  }, delay)
+}
+
+// 提示音复用同一个 AudioContext，避免每条消息都新建实例耗尽资源
+let notificationAudioCtx = null
+function getNotificationAudioCtx() {
+  if (notificationAudioCtx) return notificationAudioCtx
+  const AudioCtx = window.AudioContext || window.webkitAudioContext
+  if (!AudioCtx) return null
+  notificationAudioCtx = new AudioCtx()
+  return notificationAudioCtx
+}
+
 export const useChatStore = defineStore('chat', () => {
   const authStore = useAuthStore()
 
@@ -33,12 +53,12 @@ export const useChatStore = defineStore('chat', () => {
 
   function setFriends(friends) {
     cachedFriends.value = friends
-    writeJSON('cached_friends', friends)
+    debouncedWrite('cached_friends', friends)
   }
 
   function setHistory(friendUsername, history) {
     cachedHistory.value[friendUsername] = history.slice(-30)
-    writeJSON('cached_history', cachedHistory.value)
+    debouncedWrite('cached_history', cachedHistory.value)
   }
 
   function setActiveContact(contact) {
@@ -65,6 +85,7 @@ export const useChatStore = defineStore('chat', () => {
 
   async function fetchPendingRequestsCount() {
     if (!authStore.isLoggedIn) return
+    if (typeof document !== 'undefined' && document.hidden) return
     try {
       const res = await apiFetch('/chat/friend-requests/pending')
       const data = await res.json()
@@ -247,17 +268,14 @@ export const useChatStore = defineStore('chat', () => {
 
   function playNotificationSound() {
     try {
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext
-      if (!AudioContextClass) return
-      const audioCtx = new AudioContextClass()
+      const audioCtx = getNotificationAudioCtx()
+      if (!audioCtx) return
       if (audioCtx.state === 'suspended') {
         const resume = () => {
-          audioCtx.resume().then(() => {
-            playSynthPing(audioCtx)
-            window.removeEventListener('click', resume)
-          })
+          audioCtx.resume().then(() => playSynthPing(audioCtx))
+          window.removeEventListener('click', resume)
         }
-        window.addEventListener('click', resume)
+        window.addEventListener('click', resume, { once: true })
         return
       }
       playSynthPing(audioCtx)

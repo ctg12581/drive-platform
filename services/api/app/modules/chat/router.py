@@ -3,8 +3,9 @@
 import uuid
 from typing import Dict, Set
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
 from app.core.db import db_cursor
@@ -48,7 +49,7 @@ def _are_friends(cur, username: str, friend: str) -> bool:
 
 
 @router.post("/add-friend")
-async def add_friend(data: AddFriendSchema, current_user: dict = Depends(get_current_user)):
+def add_friend(data: AddFriendSchema, current_user: dict = Depends(get_current_user)):
     username = current_user["username"]
     friend = data.friend_username.strip()
 
@@ -82,7 +83,7 @@ async def add_friend(data: AddFriendSchema, current_user: dict = Depends(get_cur
 
 
 @router.get("/friend-requests/pending")
-async def get_pending_requests(current_user: dict = Depends(get_current_user)):
+def get_pending_requests(current_user: dict = Depends(get_current_user)):
     with db_cursor() as cur:
         cur.execute(
             """
@@ -103,7 +104,7 @@ async def get_pending_requests(current_user: dict = Depends(get_current_user)):
 
 
 @router.post("/friend-requests/accept")
-async def accept_friend_request(data: AcceptFriendSchema, current_user: dict = Depends(get_current_user)):
+def accept_friend_request(data: AcceptFriendSchema, current_user: dict = Depends(get_current_user)):
     with db_cursor(commit=True) as cur:
         cur.execute("SELECT friend_username FROM friendships WHERE id = %s", (data.request_id,))
         row = cur.fetchone()
@@ -114,7 +115,7 @@ async def accept_friend_request(data: AcceptFriendSchema, current_user: dict = D
 
 
 @router.post("/friend-requests/reject")
-async def reject_friend_request(data: AcceptFriendSchema, current_user: dict = Depends(get_current_user)):
+def reject_friend_request(data: AcceptFriendSchema, current_user: dict = Depends(get_current_user)):
     with db_cursor(commit=True) as cur:
         cur.execute("SELECT friend_username FROM friendships WHERE id = %s", (data.request_id,))
         row = cur.fetchone()
@@ -125,7 +126,7 @@ async def reject_friend_request(data: AcceptFriendSchema, current_user: dict = D
 
 
 @router.post("/friend/delete")
-async def delete_friend(data: DeleteFriendSchema, current_user: dict = Depends(get_current_user)):
+def delete_friend(data: DeleteFriendSchema, current_user: dict = Depends(get_current_user)):
     username = current_user["username"]
     friend = data.friend_username.strip()
     try:
@@ -157,7 +158,7 @@ def summarize_last_message(raw_msg: str, sender: str, current_username: str, fri
 
 
 @router.get("/friends")
-async def get_friends(current_user: dict = Depends(get_current_user)):
+def get_friends(current_user: dict = Depends(get_current_user)):
     """好友列表：固定 3 次查询完成，避免逐个好友的 N+1 查询。"""
     username = current_user["username"]
     with db_cursor() as cur:
@@ -222,26 +223,42 @@ async def get_friends(current_user: dict = Depends(get_current_user)):
 
 
 @router.get("/history/{friend_username}")
-async def get_chat_history(friend_username: str, current_user: dict = Depends(get_current_user)):
+def get_chat_history(
+    friend_username: str,
+    limit: int = Query(200, ge=1, le=500),
+    current_user: dict = Depends(get_current_user),
+):
     username = current_user["username"]
     with db_cursor(commit=True) as cur:
-        # 打开窗口即把对方发来的消息标记为已读
+        # 只有存在未读时才写库，避免每次打开会话都产生无用 UPDATE
         cur.execute(
-            "UPDATE chat_messages SET is_read = TRUE "
-            "WHERE sender = %s AND receiver = %s AND is_read = FALSE",
+            "SELECT 1 FROM chat_messages WHERE sender = %s AND receiver = %s "
+            "AND is_read = FALSE LIMIT 1",
             (friend_username, username),
         )
+        if cur.fetchone():
+            cur.execute(
+                "UPDATE chat_messages SET is_read = TRUE "
+                "WHERE sender = %s AND receiver = %s AND is_read = FALSE",
+                (friend_username, username),
+            )
 
+        # UNION ALL 让两个方向分别命中 (sender, receiver) 索引；只取最近 limit 条
         cur.execute(
             """
-            SELECT id, sender, receiver, message, is_read, is_recalled, created_at
-            FROM chat_messages
-            WHERE (sender = %s AND receiver = %s) OR (sender = %s AND receiver = %s)
-            ORDER BY created_at ASC
+            SELECT * FROM (
+                SELECT id, sender, receiver, message, is_read, is_recalled, created_at
+                FROM chat_messages WHERE sender = %s AND receiver = %s
+                UNION ALL
+                SELECT id, sender, receiver, message, is_read, is_recalled, created_at
+                FROM chat_messages WHERE sender = %s AND receiver = %s
+            ) t
+            ORDER BY created_at DESC
+            LIMIT %s
             """,
-            (username, friend_username, friend_username, username),
+            (username, friend_username, friend_username, username, limit),
         )
-        records = cur.fetchall()
+        records = list(reversed(cur.fetchall()))
 
     history = []
     for row in records:
@@ -282,38 +299,42 @@ def _detect_image_extension(data: bytes) -> str | None:
 
 
 @router.post("/upload")
-async def upload_image(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
+def upload_image(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
     if not r2_client or not settings.R2_BUCKET_NAME or not settings.R2_PUBLIC_URL:
         raise HTTPException(status_code=500, detail="服务器未正确配置 Cloudflare R2 存储环境变量")
 
     try:
-        # 只读取上限 + 1 字节，超限即拒绝，避免把超大文件整体读进内存
-        file_bytes = await file.read(settings.MAX_UPLOAD_BYTES + 1)
-    finally:
-        await file.close()
+        stream = file.file
+        # 先探测大小与文件头，再流式上传，避免把整张图读进内存
+        stream.seek(0, 2)
+        size = stream.tell()
+        stream.seek(0)
+        if size == 0:
+            raise HTTPException(status_code=400, detail="上传文件为空")
+        if size > settings.MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"图片过大，限制小于 {settings.MAX_UPLOAD_BYTES // (1024 * 1024)}MB",
+            )
 
-    if not file_bytes:
-        raise HTTPException(status_code=400, detail="上传文件为空")
-    if len(file_bytes) > settings.MAX_UPLOAD_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail=f"图片过大，限制小于 {settings.MAX_UPLOAD_BYTES // (1024 * 1024)}MB",
+        file_extension = _detect_image_extension(stream.read(16))
+        if file_extension is None:
+            raise HTTPException(status_code=400, detail="文件内容不是有效图片（支持 png/jpg/gif/webp）")
+        stream.seek(0)
+
+        unique_filename = f"{uuid.uuid4()}.{file_extension}"
+        r2_client.upload_fileobj(
+            stream,
+            settings.R2_BUCKET_NAME,
+            unique_filename,
+            ExtraArgs={"ContentType": IMAGE_CONTENT_TYPES.get(file_extension, "application/octet-stream")},
         )
-
-    file_extension = _detect_image_extension(file_bytes)
-    if file_extension is None:
-        raise HTTPException(status_code=400, detail="文件内容不是有效图片（支持 png/jpg/gif/webp）")
-
-    unique_filename = f"{uuid.uuid4()}.{file_extension}"
-    try:
-        r2_client.put_object(
-            Bucket=settings.R2_BUCKET_NAME,
-            Key=unique_filename,
-            Body=file_bytes,
-            ContentType=IMAGE_CONTENT_TYPES.get(file_extension, "application/octet-stream"),
-        )
+    except HTTPException:
+        raise
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"上传至 Cloudflare R2 失败: {exc}") from exc
+    finally:
+        file.file.close()
 
     return {"success": True, "url": f"{settings.R2_PUBLIC_URL.rstrip('/')}/{unique_filename}"}
 
@@ -343,8 +364,9 @@ class ConnectionManager:
             except Exception:  # noqa: BLE001 - 单个连接异常不影响其它连接
                 pass
 
-    async def send_direct_message(self, message: str, sender: str, receiver: str) -> int | None:
-        """落库并转发给接收方；非好友或写入失败返回 None。"""
+    @staticmethod
+    def _persist_message(message: str, sender: str, receiver: str) -> int | None:
+        """同步落库（在线程池中执行），非好友或失败返回 None。"""
         try:
             with db_cursor(commit=True) as cur:
                 if not _are_friends(cur, sender, receiver):
@@ -353,11 +375,33 @@ class ConnectionManager:
                     "INSERT INTO chat_messages (sender, receiver, message) VALUES (%s, %s, %s) RETURNING id",
                     (sender, receiver, message),
                 )
-                message_id = cur.fetchone()[0]
+                return cur.fetchone()[0]
         except Exception as exc:  # noqa: BLE001
             print(f"💾 写入消息历史失败: {exc}")
             return None
 
+    @staticmethod
+    def _mark_read(owner: str, other: str):
+        with db_cursor(commit=True) as cur:
+            cur.execute(
+                "UPDATE chat_messages SET is_read = TRUE "
+                "WHERE sender = %s AND receiver = %s AND is_read = FALSE",
+                (other, owner),
+            )
+
+    @staticmethod
+    def _recall(message_id: int, sender: str):
+        with db_cursor(commit=True) as cur:
+            cur.execute(
+                "UPDATE chat_messages SET is_recalled = TRUE WHERE id = %s AND sender = %s",
+                (message_id, sender),
+            )
+
+    async def send_direct_message(self, message: str, sender: str, receiver: str) -> int | None:
+        """落库并转发给接收方；非好友或写入失败返回 None。"""
+        message_id = await run_in_threadpool(self._persist_message, message, sender, receiver)
+        if message_id is None:
+            return None
         await self.send_to_user(
             receiver, {"type": "msg", "id": message_id, "from": sender, "message": message}
         )
@@ -397,22 +441,13 @@ async def websocket_endpoint(websocket: WebSocket, username: str, token: str = "
 
             elif msg_type == "read":
                 if target_user:
-                    with db_cursor(commit=True) as cur:
-                        cur.execute(
-                            "UPDATE chat_messages SET is_read = TRUE "
-                            "WHERE sender = %s AND receiver = %s AND is_read = FALSE",
-                            (target_user, username),
-                        )
+                    await run_in_threadpool(manager._mark_read, username, target_user)
                     await manager.send_to_user(target_user, {"type": "read", "from": username})
 
             elif msg_type == "recall":
                 message_id = data.get("message_id")
                 if message_id and target_user:
-                    with db_cursor(commit=True) as cur:
-                        cur.execute(
-                            "UPDATE chat_messages SET is_recalled = TRUE WHERE id = %s AND sender = %s",
-                            (message_id, username),
-                        )
+                    await run_in_threadpool(manager._recall, message_id, username)
                     await manager.send_to_user(
                         target_user, {"type": "recall", "from": username, "message_id": message_id}
                     )
