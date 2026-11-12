@@ -61,6 +61,7 @@ query ($page: Int, $perPage: Int, $chars: Int, $country: CountryCode) {
       title { romaji native english }
       popularity
       genres
+      coverImage { large medium }
       characters(sort: [ROLE, RELEVANCE], perPage: $chars) {
         edges {
           node { id name { full native } image { large medium } description(asHtml: false) }
@@ -243,14 +244,19 @@ def _crawl_anilist_sync(country: str, region: str, max_per_region: int,
                 if not name:
                     continue
                 image = node.get("image") or {}
+                cover = m.get("coverImage") or {}
                 description = _clean_text(node.get("description") or "")[:600]
                 collected[external_id] = {
-                    "external_id": external_id,
+                    "char_external_id": external_id,
+                    "work_external_id": f"anilist:{m.get('id')}",
+                    "work_title": work,
+                    "work_title_en": work_en,
+                    "work_cover": (cover.get("large") or cover.get("medium") or "").strip(),
+                    "work_tags": tags,
+                    "work_popularity": popularity,
                     "region": region,
                     "name": name,
                     "name_en": name_en,
-                    "work": work,
-                    "work_en": work_en,
                     "avatar": REGION_FLAG.get(region, "🎬"),
                     "image_url": (image.get("large") or image.get("medium") or "").strip(),
                     "tags": tags,
@@ -303,6 +309,7 @@ def _crawl_tvmaze_sync(max_per_region: int) -> list[dict]:
         show_id = show["id"]
         work = (show.get("name") or show_name).strip()
         genres = _translate_tags(show.get("genres") or [], "us")
+        show_cover = ((show.get("image") or {}).get("medium") or "").strip()
         rating = (show.get("rating") or {}).get("average")
         popularity = int(rating * 10) if rating else int(show.get("weight") or 0)
         try:
@@ -325,12 +332,16 @@ def _crawl_tvmaze_sync(max_per_region: int) -> list[dict]:
             intro = f"出自美国动画《{work}》的角色"
             intro += f"，由 {person_name} 配音。" if person_name else "。"
             collected[external_id] = {
-                "external_id": external_id,
+                "char_external_id": external_id,
+                "work_external_id": f"tvmaze:{show_id}",
+                "work_title": work,
+                "work_title_en": work,
+                "work_cover": show_cover,
+                "work_tags": list(genres),
+                "work_popularity": popularity,
                 "region": "us",
                 "name": char_name,
                 "name_en": char_name,
-                "work": work,
-                "work_en": work,
                 "avatar": REGION_FLAG.get("us", "🎬"),
                 "image_url": (char_image or person_image).strip(),
                 "tags": list(genres),
@@ -396,39 +407,88 @@ async def collect_all(max_per_region: int | None = None) -> tuple[dict[str, list
 
 
 async def _persist(items: list[dict], regions: set[str]) -> None:
-    """按地区替换快照：只删除并重写本次成功的地区，失败地区保留旧数据（单事务）。"""
+    """按地区替换快照：先写作品、再写角色（work_id 关联），失败地区保留旧数据（单事务）。"""
     if not regions:
         return
-    rows = [
-        (
-            (it.get("external_id") or "")[:80],
-            (it.get("region") or "")[:8],
-            (it.get("name") or "")[:120],
-            (it.get("name_en") or "")[:160],
-            (it.get("work") or "")[:200],
-            (it.get("work_en") or "")[:200],
-            (it.get("avatar") or "")[:16],
-            (it.get("image_url") or "")[:1000],
-            it.get("tags") or [],
-            (it.get("voice_actor") or "")[:200],
-            it.get("personality") or "",
-            it.get("introduction") or "",
-            it.get("quote") or "",
-            (it.get("source") or "")[:20],
-            int(it.get("popularity") or 0),
-        )
-        for it in items
-        if it.get("region") in regions
-    ]
+
+    # 1) 汇总作品（同一作品下的角色只落一条作品记录，并统计角色数）
+    works: dict[tuple[str, str], dict] = {}
+    for it in items:
+        if it.get("region") not in regions:
+            continue
+        key = (it.get("source") or "", it.get("work_external_id") or "")
+        if not key[1]:
+            continue
+        work = works.get(key)
+        if work is None:
+            work = {
+                "external_id": it["work_external_id"],
+                "source": it.get("source") or "",
+                "region": it.get("region") or "",
+                "title": it.get("work_title") or "",
+                "title_en": it.get("work_title_en") or "",
+                "cover": it.get("work_cover") or "",
+                "tags": it.get("work_tags") or [],
+                "popularity": int(it.get("work_popularity") or 0),
+                "character_count": 0,
+            }
+            works[key] = work
+        work["character_count"] += 1
+
+    if not works:
+        return
+
     async with db_transaction() as conn:
-        await conn.execute("DELETE FROM anime_characters WHERE region = ANY($1::text[])", list(regions))
-        if rows:
+        # 删除本地区旧作品（角色通过外键级联删除），其它地区不动
+        await conn.execute("DELETE FROM anime_works WHERE region = ANY($1::text[])", list(regions))
+
+        work_id_map: dict[str, int] = {}
+        for work in works.values():
+            row = await conn.fetchrow(
+                "INSERT INTO anime_works "
+                "(external_id, source, region, title, title_en, cover, tags, popularity, character_count, fetched_at) "
+                "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, now()) RETURNING id",
+                work["external_id"][:80],
+                work["source"][:20],
+                work["region"][:8],
+                work["title"][:200],
+                work["title_en"][:200],
+                work["cover"][:1000],
+                work["tags"],
+                work["popularity"],
+                work["character_count"],
+            )
+            work_id_map[work["external_id"]] = row["id"]
+
+        char_rows = []
+        for it in items:
+            if it.get("region") not in regions:
+                continue
+            work_id = work_id_map.get(it.get("work_external_id") or "")
+            if not work_id:
+                continue
+            char_rows.append((
+                (it.get("char_external_id") or "")[:80],
+                (it.get("source") or "")[:20],
+                work_id,
+                (it.get("name") or "")[:120],
+                (it.get("name_en") or "")[:160],
+                (it.get("avatar") or "")[:16],
+                (it.get("image_url") or "")[:1000],
+                it.get("tags") or [],
+                (it.get("voice_actor") or "")[:200],
+                it.get("personality") or "",
+                it.get("introduction") or "",
+                it.get("quote") or "",
+                int(it.get("popularity") or 0),
+            ))
+        if char_rows:
             await conn.executemany(
                 "INSERT INTO anime_characters "
-                "(external_id, region, name, name_en, work, work_en, avatar, image_url, tags, "
-                " voice_actor, personality, introduction, quote, source, popularity, fetched_at) "
-                "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15, now())",
-                rows,
+                "(external_id, source, work_id, name, name_en, avatar, image_url, tags, "
+                " voice_actor, personality, introduction, quote, popularity, fetched_at) "
+                "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, now())",
+                char_rows,
             )
 
 
@@ -436,11 +496,11 @@ async def crawl_all(max_per_region: int | None = None, persist: bool = True) -> 
     """抓取全部来源并（可选）落库，返回本轮抓到的角色列表。"""
     async with _CRAWL_LOCK:
         results, failures = await collect_all(max_per_region)
-        # 全局去重（source + external_id）
+        # 全局去重（source + 角色 external_id）
         dedup: dict[str, dict] = {}
         for items in results.values():
             for item in items:
-                dedup[f"{item['source']}:{item['external_id']}"] = item
+                dedup[f"{item['source']}:{item['char_external_id']}"] = item
         collected = list(dedup.values())
         if not collected:
             print("⚠️ [ANIME] 本轮未抓取到任何角色，保留上一轮数据")

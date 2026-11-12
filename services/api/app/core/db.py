@@ -101,6 +101,7 @@ _TIMESTAMP_COLUMNS = [
     ("user_quiz_questions", "created_at"),
     ("quiz_attempts", "created_at"),
     ("hot_news", "fetched_at"),
+    ("anime_works", "fetched_at"),
     ("anime_characters", "fetched_at"),
 ]
 
@@ -253,16 +254,44 @@ SCHEMA_STATEMENTS = [
     """,
     "ALTER TABLE hot_news ADD COLUMN IF NOT EXISTS kind VARCHAR(10) DEFAULT 'rank';",
     "ALTER TABLE hot_news ADD COLUMN IF NOT EXISTS image_url TEXT DEFAULT '';",
-    # 动漫人物图鉴：由后台定时爬虫（AniList 日/国漫 + TVmaze 美漫）整表刷新为最新快照
+    # 动漫人物图鉴：作品表 + 角色表（作品 1 : N 角色），由后台定时爬虫整表刷新
+    # 旧版是单表（无 work_id），检测到旧结构则一次性重建，数据由爬虫重新填充
+    """
+    DO $$
+    BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.tables
+                   WHERE table_schema = current_schema() AND table_name = 'anime_characters')
+           AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_schema = current_schema() AND table_name = 'anime_characters'
+                     AND column_name = 'work_id') THEN
+            DROP TABLE anime_characters CASCADE;
+        END IF;
+    END $$;
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS anime_works (
+        id SERIAL PRIMARY KEY,
+        external_id VARCHAR(80) NOT NULL,
+        source VARCHAR(20) DEFAULT '',
+        region VARCHAR(8) NOT NULL,
+        title VARCHAR(200) NOT NULL,
+        title_en VARCHAR(200) DEFAULT '',
+        cover TEXT DEFAULT '',
+        tags JSONB DEFAULT '[]'::jsonb,
+        popularity INT DEFAULT 0,
+        character_count INT DEFAULT 0,
+        fetched_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (source, external_id)
+    );
+    """,
     """
     CREATE TABLE IF NOT EXISTS anime_characters (
         id SERIAL PRIMARY KEY,
         external_id VARCHAR(80) NOT NULL,
-        region VARCHAR(8) NOT NULL,
+        source VARCHAR(20) DEFAULT '',
+        work_id INT NOT NULL REFERENCES anime_works(id) ON DELETE CASCADE,
         name VARCHAR(120) NOT NULL,
         name_en VARCHAR(160) DEFAULT '',
-        work VARCHAR(200) DEFAULT '',
-        work_en VARCHAR(200) DEFAULT '',
         avatar VARCHAR(16) DEFAULT '',
         image_url TEXT DEFAULT '',
         tags JSONB DEFAULT '[]'::jsonb,
@@ -270,16 +299,14 @@ SCHEMA_STATEMENTS = [
         personality TEXT DEFAULT '',
         introduction TEXT DEFAULT '',
         quote TEXT DEFAULT '',
-        source VARCHAR(20) DEFAULT '',
         popularity INT DEFAULT 0,
-        fetched_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        fetched_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (source, external_id)
     );
     """,
-    "ALTER TABLE anime_characters ADD COLUMN IF NOT EXISTS image_url TEXT DEFAULT '';",
-    "ALTER TABLE anime_characters ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT '';",
-    "ALTER TABLE anime_characters ADD COLUMN IF NOT EXISTS popularity INT DEFAULT 0;",
-    "CREATE UNIQUE INDEX IF NOT EXISTS uq_anime_characters_external ON anime_characters (source, external_id);",
-    "CREATE INDEX IF NOT EXISTS idx_anime_characters_region ON anime_characters (region, popularity DESC);",
+    "CREATE INDEX IF NOT EXISTS idx_anime_works_region ON anime_works (region, popularity DESC);",
+    "CREATE INDEX IF NOT EXISTS idx_anime_works_popularity ON anime_works (popularity DESC);",
+    "CREATE INDEX IF NOT EXISTS idx_anime_characters_work ON anime_characters (work_id);",
     "CREATE INDEX IF NOT EXISTS idx_anime_characters_fetched_at ON anime_characters (fetched_at DESC);",
     "CREATE INDEX IF NOT EXISTS idx_chat_messages_sender_receiver ON chat_messages (sender, receiver);",
     "CREATE INDEX IF NOT EXISTS idx_chat_messages_receiver_unread ON chat_messages (receiver, is_read);",

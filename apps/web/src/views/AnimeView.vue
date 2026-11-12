@@ -79,7 +79,7 @@
       </div>
       <template v-else>
         <div class="work-grid">
-          <div v-for="w in works" :key="w.region + '|' + w.work" class="work-card" @click="openWork(w)">
+          <div v-for="w in works" :key="w.id" class="work-card" @click="openWork(w)">
             <div class="work-cover" :style="{ background: themeOf(w.region).grad }">
               <span class="anime-region-badge" :style="{ background: themeOf(w.region).solid }">
                 {{ w.region_emoji }} {{ w.region_name }}
@@ -216,18 +216,6 @@ const coverStyle = (c, idx) => {
   return { background, height: 132 + (h % 4) * 16 + 'px' }
 }
 
-const buildQuery = (extra = {}) => {
-  const qs = new URLSearchParams()
-  if (activeRegion.value && activeRegion.value !== 'all') qs.set('region', activeRegion.value)
-  const kw = searchQuery.value.trim()
-  if (kw) qs.set('keyword', kw)
-  for (const [k, v] of Object.entries(extra)) {
-    if (v) qs.set(k, v)
-  }
-  const s = qs.toString()
-  return s ? `?${s}` : ''
-}
-
 const loadRegions = async () => {
   try {
     const data = await cachedFetch(
@@ -309,13 +297,15 @@ const loadCharacters = async (force = false) => {
   if (!activeWork.value) return
   loadingChars.value = true
   try {
-    const region = activeRegion.value
+    const workId = activeWork.value.id
     const keyword = searchQuery.value.trim()
-    const work = activeWork.value.work
+    const qs = new URLSearchParams()
+    if (workId) qs.set('work_id', String(workId))
+    if (keyword) qs.set('keyword', keyword)
     const data = await cachedFetch(
-      `anime:chars:${region}:${work}:${keyword}`,
+      `anime:chars:${workId}:${keyword}`,
       async () => {
-        const res = await apiFetch(`/anime/list${buildQuery({ work })}`)
+        const res = await apiFetch(`/anime/list?${qs.toString()}`)
         const json = await res.json()
         if (!res.ok || !json.success) throw new Error('获取角色列表失败')
         return json
