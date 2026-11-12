@@ -97,6 +97,7 @@ python server.py         # 默认 http://127.0.0.1:3000 ，接口文档 /docs
 | 后端 API | https://drive-model-backend.onrender.com |
 | 用户端（GitHub Pages） | https://ctg12581.github.io/drive-platform/ |
 | 管理后台（GitHub Pages） | https://ctg12581.github.io/drive-platform/admin/ |
+| 旧入口（自动跳转） | https://ctg12581.github.io/drive-model-frontend/ → 新用户端 |
 
 > 若 GitHub 仓库名不是 `drive-platform`，把上面地址中的 `drive-platform` 换成实际仓库名即可（页面路径由仓库名决定，`base: './'` 已兼容）。
 

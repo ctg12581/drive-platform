@@ -97,3 +97,13 @@ curl https://drive-model-backend.onrender.com/api/ping
 
 - 前端：`gh-pages` 分支历史即历史部署，可回退该分支。
 - 后端：Render 控制台 Deploys 列表选择上一个成功版本重新部署。
+
+## 7. 旧入口跳转（已完成）
+
+旧地址 `https://ctg12581.github.io/drive-model-frontend/` 已通过其仓库的 `gh-pages` 分支加入跳转页：
+- 仓库：`ctg12581/drive-model-frontend`
+- 分支：`gh-pages`（提交 `7c815f0`）
+- 行为：访问旧地址会 `location.replace` 到 `https://ctg12581.github.io/drive-platform/`，并保留 `#/...` 路由。
+
+如需调整跳转目标，编辑该仓库 `gh-pages` 分支的 `index.html` 即可。
+
