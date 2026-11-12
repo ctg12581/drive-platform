@@ -156,6 +156,8 @@ SCHEMA_STATEMENTS = [
         created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
     );
     """,
+    # 旧表兼容：早期 drive_records 没有 username 列
+    "ALTER TABLE drive_records ADD COLUMN IF NOT EXISTS username VARCHAR(50);",
     """
     CREATE TABLE IF NOT EXISTS friendships (
         id SERIAL PRIMARY KEY,
@@ -288,8 +290,13 @@ async def _ensure_default_admin():
 async def init_global_tables():
     """在服务启动时统一建表、索引与历史数据迁移。失败会抛出以便启动阶段暴露问题。"""
     async with db_conn() as conn:
-        for statement in SCHEMA_STATEMENTS:
-            await conn.execute(statement)
+        for idx, statement in enumerate(SCHEMA_STATEMENTS):
+            try:
+                await conn.execute(statement)
+            except Exception as exc:  # noqa: BLE001 - 打印具体失败语句便于定位
+                snippet = " ".join(statement.split())[:160]
+                print(f"❌ [DB] 迁移语句 #{idx} 失败: {snippet!r} :: {exc}")
+                raise
     await _init_search_indexes()
     await _ensure_default_admin()
     print("✅ [DB] 数据库表结构初始化成功")
