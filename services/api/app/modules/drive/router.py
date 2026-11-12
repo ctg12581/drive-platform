@@ -1,10 +1,23 @@
 # app/modules/drive/router.py
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
-from app.modules.auth.service import get_current_user # 引入安全守卫
-from app.core.db import get_db_connection
+
+from app.core.db import db_cursor
+from app.modules.auth.service import get_current_user
 
 router = APIRouter(prefix="/drive", tags=["DRIVE 人格分析"])
+
+# 等级到分数的映射，用于生成雷达图数据
+GRADE_SCORE = {"S": 5, "A": 4, "B": 3, "C": 2, "D": 1}
+
+DIMENSION_LABELS = {
+    "d": "决策力",
+    "r": "意志力",
+    "i": "智力",
+    "v": "价值观",
+    "e": "灵活性",
+}
+
 
 class DriveEvaluateRequest(BaseModel):
     d: str = Field(..., pattern="^[SABCDsabcd]$")
@@ -13,34 +26,43 @@ class DriveEvaluateRequest(BaseModel):
     v: str = Field(..., pattern="^[SABCDsabcd]$")
     e: str = Field(..., pattern="^[SABCDsabcd]$")
 
+
+def build_synthesis(scores: dict[str, int]) -> str:
+    """根据五维得分生成一句简要成长建议。"""
+    average = sum(scores.values()) / len(scores)
+    strongest = max(scores, key=scores.get)
+    weakest = min(scores, key=scores.get)
+    if average >= 4.5:
+        return f"各项维度表现优异，尤其在{DIMENSION_LABELS[strongest]}上突出，请继续保持。"
+    if average >= 3.5:
+        return f"整体表现良好，{DIMENSION_LABELS[strongest]}是优势，可重点提升{DIMENSION_LABELS[weakest]}。"
+    return f"建议优先加强{DIMENSION_LABELS[weakest]}，同时发挥{DIMENSION_LABELS[strongest]}的优势。"
+
+
 @router.post("/evaluate")
 async def evaluate(data: DriveEvaluateRequest, current_user: dict = Depends(get_current_user)):
-    """
-    此接口通过 Depends(get_current_user) 进行了保护。
-    前端请求时，Header 必须带有: Authorization: Bearer <你的JWT-Token>
-    否则直接返回 401 Unauthorized。
-    """
-    username = current_user["username"] # 从登录态中获取用户名
-    
-    # ... 此处为您原本的得分、文本解析计算逻辑 ...
-    scores = {"d": 3, "r": 4, "i": 5, "v": 4, "e": 3} # 模拟计算
-    
-    # 写入带有用户归属的评测记录
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
+    """对当前登录用户的五维等级进行评测并记录历史。"""
+    username = current_user["username"]
+    grades = {
+        "d": data.d.upper(),
+        "r": data.r.upper(),
+        "i": data.i.upper(),
+        "v": data.v.upper(),
+        "e": data.e.upper(),
+    }
+    scores = {key: GRADE_SCORE[grade] for key, grade in grades.items()}
+
+    with db_cursor(commit=True) as cur:
         cur.execute(
-            "INSERT INTO drive_records (username, d_grade, r_grade, i_grade, v_grade, e_grade) VALUES (%s, %s, %s, %s, %s, %s)",
-            (username, data.d.upper(), data.r.upper(), data.i.upper(), data.v.upper(), data.e.upper())
+            "INSERT INTO drive_records "
+            "(username, d_grade, r_grade, i_grade, v_grade, e_grade) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (username, grades["d"], grades["r"], grades["i"], grades["v"], grades["e"]),
         )
-        conn.commit()
-    finally:
-        cur.close()
-        conn.close()
 
     return {
         "success": True,
         "evaluated_for": username,
         "scores": scores,
-        "synthesis": "您的各项维度均衡，请继续保持优势。"
+        "synthesis": build_synthesis(scores),
     }

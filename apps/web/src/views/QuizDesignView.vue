@@ -212,16 +212,13 @@ const openBankModal = async () => {
 
 // 💡 从题库导入：正确答案初始化为 null，不进行诱导性默认选中
 const addSelectedFromBank = () => {
-  addSelectedFromBankPayload()
-}
-const addSelectedFromBankPayload = () => {
-  checkedBankQuestions.value.forEach(q => {
+  checkedBankQuestions.value.forEach((q) => {
     if (!isAlreadyAdded(q.id)) {
       selectedQuestions.value.push({
         id: q.id,
         text: q.text,
         options: q.options,
-        answer: null 
+        answer: null,
       })
     }
   })

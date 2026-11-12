@@ -22,7 +22,12 @@
         </thead>
         <tbody>
           <tr v-for="user in users" :key="user.username">
-            <td><div class="avatar-cell">{{ user.avatar }}</div></td>
+            <td>
+              <div class="avatar-cell">
+                <img v-if="isUrl(user.avatar)" :src="user.avatar" class="avatar-img" />
+                <span v-else>{{ user.avatar }}</span>
+              </div>
+            </td>
             <td class="bold-text">@{{ user.username }}</td>
             <td>{{ user.nickname }}</td>
             <td class="count-cell">{{ user.posts_count }} 篇</td>
@@ -38,6 +43,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { isUrl } from '@drive/shared'
 import { apiFetch } from '../utils/api'
 import { formatLocalTime } from '../utils/date'
 
@@ -70,7 +76,8 @@ const fetchUsers = async () => {
 .admin-table td { padding: 14px 20px; border-bottom: 1px solid #f3f4f6; color: #111827; }
 .admin-table tbody tr:hover { background: #f9fafb; }
 
-.avatar-cell { width: 32px; height: 32px; background: #f3f4f6; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; }
+.avatar-cell { width: 32px; height: 32px; background: #f3f4f6; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; overflow: hidden; }
+.avatar-img { width: 100%; height: 100%; object-fit: cover; }
 .bold-text { font-weight: bold; color: #2563eb !important; }
 .count-cell { font-weight: bold; }
 .time-cell { color: #6b7280; }

@@ -72,6 +72,7 @@
 
 <script setup>
 import { ref } from 'vue'
+import { isUrl } from '@drive/shared'
 import { apiFetch } from '../utils/api'
 import { useRouter } from 'vue-router'
 import { formatLocalTime } from '../utils/date'
@@ -149,11 +150,6 @@ const openUserProfile = async (targetUsername) => {
   } catch {
     alert('无法加载该用户的主页')
   }
-}
-
-const isUrl = (text) => {
-  if (!text) return false
-  return text.startsWith('http://') || text.startsWith('https://') || text.startsWith('/')
 }
 </script>
 

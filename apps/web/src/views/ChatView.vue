@@ -81,7 +81,7 @@
             
             <!-- 气泡主体 -->
             <div v-if="!msg.system" class="msg-bubble" @click.stop="toggleMessageMenu(idx)">
-              <img v-if="isImage(msg.text)" :src="msg.text" class="chat-img" @load="scrollToBottom" />
+              <img v-if="isImageUrl(msg.text)" :src="msg.text" class="chat-img" @load="scrollToBottom" />
               <span v-else>{{ msg.text }}</span>
               <div class="msg-meta">
                 <span v-if="msg.self" :class="['read-status', { 'status-read': msg.is_read }]">
@@ -162,43 +162,22 @@
     </div>
 
   </div>
-
-
-   <div v-if="showChallengeModal" class="modal-backdrop" @click.self="showChallengeModal = false">
-      <div class="modal-card" style="max-width: 480px; max-height: 85vh; padding: 20px; text-align: left;">
-        <button class="modal-close" @click="showChallengeModal = false">✕</button>
-        <h3 style="margin-top: 0; font-size: 1.2rem; font-weight: 800; text-align: center; color: #db2777;">💘 {{ friendQuiz.title }}</h3>
-        <p style="font-size: 0.8rem; color: var(--x-text-gray); text-align: center; margin-bottom: 20px;">答题完毕后，点击提交即可由 AI 计算你们的灵犀指数！</p>
-        
-        <div class="modal-body" style="flex: 1; overflow-y: auto;">
-          <div v-for="(q, idx) in friendQuiz.questions" :key="q.id" class="quiz-setup-item" style="margin-bottom: 20px; border-bottom: 1px solid var(--x-border); padding-bottom: 12px;">
-            <p style="font-weight: bold; font-size: 0.95rem; margin: 0 0 10px 0;">Q{{ idx + 1 }}. {{ q.text }}</p>
-            <div style="display: flex; flex-direction: column; gap: 6px;">
-              <label v-for="opt in q.options" :key="opt" style="font-size: 0.85rem; display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                <input type="radio" :name="'challenge_q_' + q.id" :value="opt[0]" v-model="challengeAnswers[q.id]" style="width: auto;">
-                {{ opt }}
-              </label>
-            </div>
-          </div>
-          <button @click="submitChallenge" class="x-btn-dark" style="background: #db2777; color: white; height: 40px;">提交我的答题卡</button>
-        </div>
-      </div>
-    </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted, nextTick, computed, watch } from 'vue' 
+import { ref, onMounted, onUnmounted, nextTick, computed, watch } from 'vue'
+import { isUrl, isImageUrl } from '@drive/shared'
 import { useAuthStore } from '../store/auth'
-import { useChatStore } from '../store/chat'  // 💡 全局常驻
+import { useChatStore } from '../store/chat'
 import { formatLocalTime } from '../utils/date'
-import { apiFetch } from '../utils/api'
+import { apiFetch, API_BASE } from '../utils/api'
 
 const authStore = useAuthStore()
 const chatStore = useChatStore()
 const showAddModal = ref(false)
 const newFriendUsername = ref('')
 
-const friends = ref(chatStore.cachedFriends)
+const friends = computed(() => chatStore.cachedFriends)
 const selectedContact = ref(chatStore.activeContact)
 const messageInput = ref('')
 
@@ -276,7 +255,7 @@ const handleRecall = (messageId, index) => {
     text: '你撤回了一条消息'
   })
 
-  updateLastMessage(selectedContact.value, '你撤回了一条消息', true, '', true)
+  chatStore.updateLastMessageState(selectedContact.value, '你撤回了一条消息', true, '', true)
   chatStore.setHistory(selectedContact.value, [...chatStore.activeMessages])
 }
 
@@ -303,11 +282,7 @@ const handleDeleteFriend = async (friendUsername) => {
   }
 }
 
-// 💡 核心升级 B：直接让页面调用全局仓库的 fetchFriends() 写入并共享状态，消灭前端未读重置Bug
-const fetchFriends = async () => {
-  await chatStore.fetchFriends()
-  friends.value = chatStore.cachedFriends
-}
+const fetchFriends = () => chatStore.fetchFriends()
 
 const addFriend = async () => {
   const friend = newFriendUsername.value.trim()
@@ -342,8 +317,7 @@ const selectContact = async (friendUsername) => {
   const friend = friends.value.find(f => f.username === friendUsername)
   if (friend) {
     friend.unread = 0
-    friends.value = [...friends.value]
-    chatStore.setFriends(friends.value)
+    chatStore.setFriends([...chatStore.cachedFriends])
   }
 
   chatStore.sendWebSocketPayload({ type: "read", to: friendUsername })
@@ -363,37 +337,6 @@ const selectContact = async (friendUsername) => {
   } catch (err) {
     console.error('获取历史记录失败:', err)
   }
-}
-
-const updateLastMessage = (friendUsername, text, isSelf = false, timeStr = '', isSystemNotice = false) => {
-  const friend = friends.value.find(f => f.username === friendUsername)
-  if (!friend) return
-
-  let displayMsg = text
-  if (text.startsWith('data:image/')) {
-    displayMsg = '[图片]'
-  } else if (!isSystemNotice && text.length > 15) {
-    displayMsg = text.substring(0, 15) + '...'
-  }
-
-  if (isSystemNotice) {
-    friend.last_message = displayMsg
-  } else {
-    const prefix = isSelf ? '我' : friend.nickname
-    friend.last_message = `${prefix}: ${displayMsg}`
-  }
-
-  let timeLabel = ""
-  if (timeStr) {
-    timeLabel = timeStr.split(' ')[1] || ""
-  } else {
-    const now = new Date()
-    timeLabel = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-  }
-  friend.last_message_time = timeLabel
-  
-  friends.value = [...friends.value]
-  chatStore.setFriends(friends.value)
 }
 
 const sendMessage = () => {
@@ -417,18 +360,13 @@ const sendMessage = () => {
     is_read: false 
   })
   
-  updateLastMessage(selectedContact.value, text, true)
+  chatStore.updateLastMessageState(selectedContact.value, text, true)
   chatStore.setHistory(selectedContact.value, [...chatStore.activeMessages])
 
   messageInput.value = ''
   scrollToBottom()
 }
 
-const friendQuiz = ref(null) // 记录对方的测验信息
-const showChallengeModal = ref(false)
-const challengeAnswers = reactive({}) // 存储挑战者的答案
-
-// 在您原本的 openUserProfile 函数中，追加对好友测验的加载：
 const openUserProfile = async (targetUsername) => {
   try {
     // 1. 纯净流：只拉取用户资料与用户动态，彻底删除对 /quiz 的调用
@@ -453,42 +391,6 @@ const openUserProfile = async (targetUsername) => {
   } catch (err) {
     console.error('加载主页异常:', err)
     alert('无法加载该用户的主页')
-  }
-}
-
-// 开启答题挑战
-const startChallenge = () => {
-  if (!friendQuiz.value) return
-  // 初始化挑战答案，默认选A
-  friendQuiz.value.questions.forEach(q => {
-    challengeAnswers[q.id] = 'A'
-  })
-  showChallengeModal.value = true
-}
-
-// 提交答题卡并计算默契度
-const submitChallenge = async () => {
-  const payload = {
-    quiz_id: friendQuiz.value.quiz_id,
-    answers: challengeAnswers
-  }
-  try {
-    const res = await apiFetch('/quiz/submit', {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    })
-    const data = await res.json()
-    if (res.ok) {
-      // 成功后，关闭答题弹窗，手动将最新得分展示在个人主页上（0ms交互）
-      showChallengeModal.value = false
-      friendQuiz.value.already_challenged = true
-      friendQuiz.value.score = data.score
-      
-      // 庆祝彩蛋
-      alert(`🎉 答题成功！你们的默契度高达: ${data.score}%！\n答对题数: ${data.correct_count}/${data.total_questions}`)
-    }
-  } catch {
-    alert('提交答题失败')
   }
 }
 
@@ -564,16 +466,6 @@ const handleImageUpload = async (event) => {
     URL.revokeObjectURL(localPreviewUrl) 
     event.target.value = "" 
   }
-}
-
-const isImage = (text) => {
-  if (!text) return false
-  return text.startsWith('data:image/') || text.match(/\.(jpeg|jpg|gif|png|webp)$/i) != null
-}
-
-const isUrl = (text) => {
-  if (!text) return false
-  return text.startsWith('http://') || text.startsWith('https://') || text.startsWith('/')
 }
 
 const scrollToBottom = () => {

@@ -1,17 +1,23 @@
 // src/store/home.js
+// 主页动态流的本地缓存，保证刷新后先秒开旧数据（SWR）。
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { readJSON, writeJSON } from '@drive/shared'
 
 export const useMomentsStore = defineStore('moments', () => {
-  // 💡 核心：初始化时，先尝试从本地物理缓存里提取上一次加载成功的帖子。
-  // 这保证了即使刷新浏览器，也能实现 0ms 瞬间秒开！
-  const cachedPosts = ref(JSON.parse(localStorage.getItem('cached_posts') || '[]'))
+  const cachedPosts = ref(readJSON('cached_posts', []))
+
+  // 发布新动态后自增，供 HomeView 监听并静默刷新时间线。
+  const refreshTick = ref(0)
 
   function setPosts(posts) {
     cachedPosts.value = posts
-    // 写入物理缓存
-    localStorage.setItem('cached_posts', JSON.stringify(posts))
+    writeJSON('cached_posts', posts)
   }
 
-  return { cachedPosts, setPosts }
+  function requestRefresh() {
+    refreshTick.value += 1
+  }
+
+  return { cachedPosts, refreshTick, setPosts, requestRefresh }
 })

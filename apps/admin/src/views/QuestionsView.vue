@@ -98,13 +98,7 @@ const questions = ref([])
 const showAddModal = ref(false)
 const showBulkModal = ref(false)
 const bulkJsonInput = ref('')
-const form = reactive({ text: '', optA: '', optB: '', optC: '', optD: '' })
-
-// 新建问题表单变量
-const customForm = reactive({
-  text: '',
-  options: ['', ''] 
-})
+const form = reactive({ text: '', options: ['', ''] })
 
 onMounted(() => {
   fetchQuestions()

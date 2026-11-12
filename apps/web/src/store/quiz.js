@@ -1,19 +1,17 @@
 // src/store/quiz.js
+// 默契挑战的本地缓存，保证切换/刷新页面后 0ms 还原出题名片。
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { readJSON, writeJSON } from '@drive/shared'
 
 export const useQuizStore = defineStore('quiz', () => {
-  // 💡 核心：初始化时，先尝试从本地物理缓存里提取我自己的出题名片状态。
-  // 这保证了切换页面甚至是刷新浏览器，也能实现 0ms 瞬间显示“我的大考验”！
-  const cachedMyQuiz = ref(JSON.parse(localStorage.getItem('cached_my_quiz') || 'null'))
-  
-  // 💡 顺带缓存好友的测验卡片列表，让整个大厅也实现 0ms 秒开！
-  const cachedFriendQuizzes = ref(JSON.parse(localStorage.getItem('cached_friend_quizzes') || '[]'))
+  const cachedMyQuiz = ref(readJSON('cached_my_quiz', null))
+  const cachedFriendQuizzes = ref(readJSON('cached_friend_quizzes', []))
 
   function setMyQuiz(quiz) {
     cachedMyQuiz.value = quiz
     if (quiz) {
-      localStorage.setItem('cached_my_quiz', JSON.stringify(quiz))
+      writeJSON('cached_my_quiz', quiz)
     } else {
       localStorage.removeItem('cached_my_quiz')
     }
@@ -21,7 +19,7 @@ export const useQuizStore = defineStore('quiz', () => {
 
   function setFriendQuizzes(quizzes) {
     cachedFriendQuizzes.value = quizzes
-    localStorage.setItem('cached_friend_quizzes', JSON.stringify(quizzes))
+    writeJSON('cached_friend_quizzes', quizzes)
   }
 
   return { cachedMyQuiz, cachedFriendQuizzes, setMyQuiz, setFriendQuizzes }

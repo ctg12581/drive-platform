@@ -122,7 +122,6 @@ html, body, #app {
   height: 100%;
   background-color: #0f1419;
   color: #ffffff;
-  display: flex;
   flex-direction: column;
   padding: 24px 16px;
   box-sizing: border-box;
@@ -232,5 +231,8 @@ html, body, #app {
     padding-top: 65px !important;  /* 移动端留出顶部固定状态栏高度 */
     padding-bottom: 65px !important; /* 移动端留出底部固底导航栏高度 */
   }
+}
+@media (min-width: 768px) {
+  .mobile-top-bar, .mobile-bottom-bar { display: none !important; }
 }
 </style>

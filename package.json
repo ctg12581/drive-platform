@@ -6,6 +6,7 @@
   "scripts": {
     "dev:web": "pnpm --filter drive-model-frontend dev",
     "dev:admin": "pnpm --filter drive-admin-frontend dev",
+    "build": "pnpm -r --filter \"./apps/*\" build",
     "build:web": "pnpm --filter drive-model-frontend build",
     "build:admin": "pnpm --filter drive-admin-frontend build",
     "api": "python services/api/server.py"

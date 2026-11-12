@@ -1,0 +1,60 @@
+name: Deploy Frontends to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/**'
+      - 'packages/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'package.json'
+      - '.github/workflows/deploy-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build user web
+        run: pnpm --filter drive-model-frontend build
+
+      - name: Build admin
+        run: pnpm --filter drive-admin-frontend build
+
+      - name: Merge admin into /admin subpath
+        run: |
+          mkdir -p apps/web/dist/admin
+          cp -r apps/admin/dist/. apps/web/dist/admin/
+          touch apps/web/dist/.nojekyll
+
+      - name: Deploy to gh-pages
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: apps/web/dist # web 根站点 + admin 子路径
+          branch: gh-pages
+          clean: true

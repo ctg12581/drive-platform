@@ -46,11 +46,9 @@
 
 <script setup>
 import { ref, reactive, nextTick } from 'vue'
-import { useAuthStore } from '../store/auth'
+import { apiFetch } from '../utils/api'
 import Chart from 'chart.js/auto'
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:3000'
-const authStore = useAuthStore()
 const form = reactive({ d: 'B', r: 'B', i: 'B', v: 'B', e: 'B' })
 const result = ref(null)
 let chartInstance = null
@@ -65,13 +63,9 @@ const dimensions = {
 
 const submitEvaluate = async () => {
   try {
-    const res = await fetch(`${API_BASE}/drive/evaluate`, {
+    const res = await apiFetch('/drive/evaluate', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authStore.token}`
-      },
-      body: JSON.stringify(form)
+      body: JSON.stringify(form),
     })
     const data = await res.json()
     if (res.ok) {

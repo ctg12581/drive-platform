@@ -84,7 +84,8 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { isUrl } from '@drive/shared'
 import { useAuthStore } from '../store/auth'
 import { useMomentsStore } from '../store/home'
 import { formatLocalTime } from '../utils/date'
@@ -113,6 +114,9 @@ onMounted(() => {
 onUnmounted(() => {
   if (checkInterval) clearInterval(checkInterval)
 })
+
+// 全局发帖成功后由 App.vue 触发刷新，无需整页 reload
+watch(() => momentsStore.refreshTick, () => fetchTimeline(true))
 
 // 加载时间线数据
 const fetchTimeline = async (silent = false) => {
@@ -186,11 +190,6 @@ const openUserProfile = async (targetUsername) => {
   } catch {
     alert('无法加载该用户的主页')
   }
-}
-
-const isUrl = (text) => {
-  if (!text) return false
-  return text.startsWith('http://') || text.startsWith('https://') || text.startsWith('/')
 }
 </script>
 

@@ -1,0 +1,42 @@
+# Render Blueprint —— DRIVE 后端（FastAPI）
+# 在 Render 控制台 New → Blueprint 选择本仓库即可按此配置创建服务；
+# 若沿用已存在的服务（srv-d8ugqmok1i2s73eum0jg），请在服务设置中手动对齐：
+#   Root Directory : services/api
+#   Build Command  : pip install -r requirements.txt
+#   Start Command  : python server.py
+#   Health Check   : /api/ping
+services:
+  - type: web
+    name: drive-model-backend
+    runtime: python
+    plan: free
+    rootDir: services/api
+    buildCommand: pip install -r requirements.txt
+    startCommand: python server.py
+    healthCheckPath: /api/ping
+    autoDeploy: true
+    buildFilter:
+      paths:
+        - services/api/**
+        - render.yaml
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.6"
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "525600"
+      - key: FRONTEND_ORIGINS
+        sync: false
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET_NAME
+        value: drive-space
+      - key: R2_PUBLIC_URL
+        sync: false

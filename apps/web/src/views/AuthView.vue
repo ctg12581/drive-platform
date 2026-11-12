@@ -128,13 +128,13 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
+import { isUrl } from '@drive/shared'
 import { useAuthStore } from '../store/auth'
-import { useChatStore } from '../store/chat'  // 💡 用于安全登出时切断 WebSocket
+import { useChatStore } from '../store/chat'
 import { useRouter } from 'vue-router'
 import { formatLocalTime } from '../utils/date'
-import { apiFetch } from '../utils/api'
+import { apiFetch, API_BASE } from '../utils/api'
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:3000'
 const authStore = useAuthStore()
 const chatStore = useChatStore()
 const router = useRouter()
@@ -152,10 +152,8 @@ const profileForm = reactive({
   avatar_url: authStore.avatar || '👤'
 })
 
-// 我的历史动态与题库变量
+// 我的历史动态
 const myPosts = ref([])
-const bankQuestions = ref([])
-const myAnswers = reactive({}) // 绑定出题答案：{ "1": "A", "2": "C" }
 
 onMounted(() => {
   if (authStore.isLoggedIn) {
@@ -250,12 +248,6 @@ const handleLogout = () => {
   chatStore.disconnectWebSocket()
   authStore.logout()
   router.push('/auth')
-}
-
-
-const isUrl = (text) => {
-  if (!text) return false
-  return text.startsWith('http://') || text.startsWith('https://') || text.startsWith('/')
 }
 </script>
 

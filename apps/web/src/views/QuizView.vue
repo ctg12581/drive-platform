@@ -36,7 +36,7 @@
         <span style="font-size: 0.8rem; opacity: 0.8;">去【搜索】添加或在【通知】里同意好友请求吧！</span>
       </div>
 
-      <div v-else-if="friendQuizzes.length > 0" class="friend-quiz-list-box">
+      <div v-else class="friend-quiz-list-box">
         <div v-for="q in friendQuizzes" :key="q.quiz_id" class="friend-quiz-card">
           <div class="friend-card-left">
             <div class="friend-avatar">
@@ -92,9 +92,9 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { isUrl } from '@drive/shared'
 import { useAuthStore } from '../store/auth'
-import { useQuizStore } from '../store/quiz'  // 💡 导入新状态缓存库
-import { formatLocalTime } from '../utils/date'
+import { useQuizStore } from '../store/quiz'
 import { apiFetch } from '../utils/api'
 
 const router = useRouter()
@@ -188,11 +188,6 @@ const submitChallenge = async () => {
   } catch {
     alert('提交答题卡失败')
   }
-}
-
-const isUrl = (text) => {
-  if (!text) return false
-  return text.startsWith('http://') || text.startsWith('https://') || text.startsWith('/')
 }
 </script>
 

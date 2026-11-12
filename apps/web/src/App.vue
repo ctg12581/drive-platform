@@ -259,12 +259,16 @@
 
 <script setup>
 import { ref, onMounted, watch } from 'vue'
+import { isUrl } from '@drive/shared'
 import { useAuthStore } from './store/auth'
 import { useChatStore } from './store/chat'
+import { useMomentsStore } from './store/home'
+import { apiFetch } from './utils/api'
 import { useRouter, useRoute } from 'vue-router'
 
 const authStore = useAuthStore()
 const chatStore = useChatStore()
+const momentsStore = useMomentsStore()
 const router = useRouter()
 const route = useRoute()
 
@@ -289,20 +293,20 @@ const closeComposeModal = () => {
 const handleGlobalPublish = async () => {
   if (!globalPostContent.value.trim()) return
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_BASE || 'http://127.0.0.1:3000'}/moments`, {
+    const res = await apiFetch('/moments', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authStore.token}`
-      },
-      body: JSON.stringify({ content: globalPostContent.value })
+      body: JSON.stringify({ content: globalPostContent.value.trim() }),
     })
     if (res.ok) {
       globalPostContent.value = ''
       showComposeModal.value = false
-      router.push('/home').then(() => {
-        window.location.reload()
-      })
+      if (route.path !== '/home') {
+        await router.push('/home')
+      }
+      momentsStore.requestRefresh()
+    } else {
+      const data = await res.json().catch(() => ({}))
+      alert(data.detail || '发布失败')
     }
   } catch {
     alert('发布失败')
@@ -322,11 +326,6 @@ watch(() => authStore.isLoggedIn, (loggedIn) => {
     chatStore.disconnectWebSocket()
   }
 })
-
-const isUrl = (text) => {
-  if (!text) return false
-  return text.startsWith('http://') || text.startsWith('https://') || text.startsWith('/')
-}
 </script>
 
 

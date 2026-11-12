@@ -44,9 +44,9 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { isUrl } from '@drive/shared'
 import { useChatStore } from '../store/chat'
 import { apiFetch } from '../utils/api'
-import { formatLocalTime } from '../utils/date'
 
 const chatStore = useChatStore()
 const requests = ref([])
@@ -84,11 +84,6 @@ const handleAction = async (requestId, action) => {
   } catch {
     alert('请求处理失败')
   }
-}
-
-const isUrl = (text) => {
-  if (!text) return false
-  return text.startsWith('http://') || text.startsWith('https://') || text.startsWith('/')
 }
 </script>
 
