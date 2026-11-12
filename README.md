@@ -51,6 +51,7 @@ python server.py                                  # http://127.0.0.1:3000 ，文
 ## 说明
 
 - 前端统一采用**移动端单栏布局**（不再维护 PC 侧栏/双栏），两套应用均如此。
+- 后端数据层使用 **asyncpg 全异步**（异步连接池 / 事务上下文 / JSONB codec）。
 - 首次启动后端会自动建表/迁移（含 `users.is_admin`、`created_at` 时区、索引）。升级前先备份数据库。
 - 聊天 WebSocket 需携带 Token（`?token=`）；管理员由数据库 `is_admin` 判定。
 - 本地 `.env` 曾出现真实 Neon / R2 / JWT 凭据，请尽快在控制台轮换。

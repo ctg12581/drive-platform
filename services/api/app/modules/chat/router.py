@@ -1,5 +1,5 @@
 # app/modules/chat/router.py
-"""实时聊天、好友关系与图片上传模块。"""
+"""实时聊天、好友关系与图片上传模块（asyncpg 全异步）。"""
 import uuid
 from typing import Dict, Set
 
@@ -8,17 +8,12 @@ from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
-from app.core.db import db_cursor
+from app.core.db import db_conn, db_transaction
 from app.core.storage import r2_client
 from app.core.timeutil import to_iso_utc
 from app.modules.auth.service import decode_token, get_current_user
 
 router = APIRouter(prefix="/chat", tags=["Chat 实时社交与好友关系"])
-
-MUTUAL_FRIENDSHIP_WHERE = """
-    (f.username = %s AND f.friend_username = %s)
-    OR (f.username = %s AND f.friend_username = %s)
-"""
 
 IMAGE_CONTENT_TYPES = {
     "png": "image/png",
@@ -40,61 +35,69 @@ class DeleteFriendSchema(BaseModel):
     friend_username: str = Field(...)
 
 
-def _are_friends(cur, username: str, friend: str) -> bool:
-    cur.execute(
-        f"SELECT 1 FROM friendships f WHERE f.status = 'accepted' AND ({MUTUAL_FRIENDSHIP_WHERE})",
-        (username, friend, friend, username),
+async def _are_friends(conn, username: str, friend: str) -> bool:
+    row = await conn.fetchval(
+        "SELECT 1 FROM friendships "
+        "WHERE status = 'accepted' AND "
+        "((username = $1 AND friend_username = $2) OR (username = $3 AND friend_username = $4))",
+        username,
+        friend,
+        friend,
+        username,
     )
-    return cur.fetchone() is not None
+    return row is not None
 
 
 @router.post("/add-friend")
-def add_friend(data: AddFriendSchema, current_user: dict = Depends(get_current_user)):
+async def add_friend(data: AddFriendSchema, current_user: dict = Depends(get_current_user)):
     username = current_user["username"]
     friend = data.friend_username.strip()
 
     if username == friend:
         raise HTTPException(status_code=400, detail="不能添加自己为好友")
 
-    with db_cursor(commit=True) as cur:
-        cur.execute("SELECT id FROM users WHERE username = %s", (friend,))
-        if not cur.fetchone():
+    async with db_transaction() as conn:
+        exists = await conn.fetchval("SELECT id FROM users WHERE username = $1", friend)
+        if not exists:
             raise HTTPException(status_code=404, detail="该用户不存在")
 
-        cur.execute(
-            f"SELECT id, status, username FROM friendships f WHERE {MUTUAL_FRIENDSHIP_WHERE}",
-            (username, friend, friend, username),
+        row = await conn.fetchrow(
+            "SELECT id, status, username FROM friendships f WHERE "
+            "(f.username = $1 AND f.friend_username = $2) OR (f.username = $3 AND f.friend_username = $4)",
+            username,
+            friend,
+            friend,
+            username,
         )
-        row = cur.fetchone()
 
         if row:
-            status_val, requester = row[1], row[2]
+            status_val, requester = row["status"], row["username"]
             if status_val == "accepted":
                 raise HTTPException(status_code=400, detail="你们已经是好友了")
             if requester == username:
                 raise HTTPException(status_code=400, detail="好友申请已发送，等待对方审核")
             raise HTTPException(status_code=400, detail="对方已向你发送好友申请，请前往通知页面同意")
 
-        cur.execute(
-            "INSERT INTO friendships (username, friend_username, status) VALUES (%s, %s, 'pending')",
-            (username, friend),
+        await conn.execute(
+            "INSERT INTO friendships (username, friend_username, status) VALUES ($1, $2, 'pending')",
+            username,
+            friend,
         )
     return {"success": True, "message": "好友申请已发送，等待对方审核"}
 
 
 @router.get("/friend-requests/pending")
-def get_pending_requests(current_user: dict = Depends(get_current_user)):
-    with db_cursor() as cur:
-        cur.execute(
+async def get_pending_requests(current_user: dict = Depends(get_current_user)):
+    async with db_conn() as conn:
+        records = await conn.fetch(
             """
             SELECT f.id, f.username, COALESCE(u.nickname, f.username), COALESCE(u.avatar_url, '👤')
             FROM friendships f
             JOIN users u ON f.username = u.username
-            WHERE f.friend_username = %s AND f.status = 'pending'
+            WHERE f.friend_username = $1 AND f.status = 'pending'
             """,
-            (current_user["username"],),
+            current_user["username"],
         )
-        records = cur.fetchall()
     return {
         "success": True,
         "requests": [
@@ -104,36 +107,44 @@ def get_pending_requests(current_user: dict = Depends(get_current_user)):
 
 
 @router.post("/friend-requests/accept")
-def accept_friend_request(data: AcceptFriendSchema, current_user: dict = Depends(get_current_user)):
-    with db_cursor(commit=True) as cur:
-        cur.execute("SELECT friend_username FROM friendships WHERE id = %s", (data.request_id,))
-        row = cur.fetchone()
+async def accept_friend_request(data: AcceptFriendSchema, current_user: dict = Depends(get_current_user)):
+    async with db_transaction() as conn:
+        row = await conn.fetchrow(
+            "SELECT friend_username FROM friendships WHERE id = $1", data.request_id
+        )
         if not row or row[0] != current_user["username"]:
             raise HTTPException(status_code=403, detail="无权处理该好友请求")
-        cur.execute("UPDATE friendships SET status = 'accepted' WHERE id = %s", (data.request_id,))
+        await conn.execute(
+            "UPDATE friendships SET status = 'accepted' WHERE id = $1", data.request_id
+        )
     return {"success": True, "message": "已同意好友请求，你们现在是好友了"}
 
 
 @router.post("/friend-requests/reject")
-def reject_friend_request(data: AcceptFriendSchema, current_user: dict = Depends(get_current_user)):
-    with db_cursor(commit=True) as cur:
-        cur.execute("SELECT friend_username FROM friendships WHERE id = %s", (data.request_id,))
-        row = cur.fetchone()
+async def reject_friend_request(data: AcceptFriendSchema, current_user: dict = Depends(get_current_user)):
+    async with db_transaction() as conn:
+        row = await conn.fetchrow(
+            "SELECT friend_username FROM friendships WHERE id = $1", data.request_id
+        )
         if not row or row[0] != current_user["username"]:
             raise HTTPException(status_code=403, detail="无权处理该好友请求")
-        cur.execute("DELETE FROM friendships WHERE id = %s", (data.request_id,))
+        await conn.execute("DELETE FROM friendships WHERE id = $1", data.request_id)
     return {"success": True, "message": "已拒绝好友请求"}
 
 
 @router.post("/friend/delete")
-def delete_friend(data: DeleteFriendSchema, current_user: dict = Depends(get_current_user)):
+async def delete_friend(data: DeleteFriendSchema, current_user: dict = Depends(get_current_user)):
     username = current_user["username"]
     friend = data.friend_username.strip()
     try:
-        with db_cursor(commit=True) as cur:
-            cur.execute(
-                f"DELETE FROM friendships f WHERE {MUTUAL_FRIENDSHIP_WHERE}",
-                (username, friend, friend, username),
+        async with db_transaction() as conn:
+            await conn.execute(
+                "DELETE FROM friendships WHERE "
+                "(username = $1 AND friend_username = $2) OR (username = $3 AND friend_username = $4)",
+                username,
+                friend,
+                friend,
+                username,
             )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"解除好友异常: {exc}") from exc
@@ -158,46 +169,51 @@ def summarize_last_message(raw_msg: str, sender: str, current_username: str, fri
 
 
 @router.get("/friends")
-def get_friends(current_user: dict = Depends(get_current_user)):
+async def get_friends(current_user: dict = Depends(get_current_user)):
     """好友列表：固定 3 次查询完成，避免逐个好友的 N+1 查询。"""
     username = current_user["username"]
-    with db_cursor() as cur:
-        cur.execute(
+    async with db_conn() as conn:
+        friend_rows = await conn.fetch(
             """
             SELECT DISTINCT
-                CASE WHEN f.username = %s THEN f.friend_username ELSE f.username END AS friend,
-                COALESCE(u.nickname, CASE WHEN f.username = %s THEN f.friend_username ELSE f.username END),
+                CASE WHEN f.username = $1 THEN f.friend_username ELSE f.username END AS friend,
+                COALESCE(u.nickname, CASE WHEN f.username = $2 THEN f.friend_username ELSE f.username END),
                 COALESCE(u.avatar_url, '👤')
             FROM friendships f
             JOIN users u ON u.username =
-                CASE WHEN f.username = %s THEN f.friend_username ELSE f.username END
-            WHERE (f.username = %s OR f.friend_username = %s) AND f.status = 'accepted'
+                CASE WHEN f.username = $3 THEN f.friend_username ELSE f.username END
+            WHERE (f.username = $4 OR f.friend_username = $5) AND f.status = 'accepted'
             """,
-            (username, username, username, username, username),
+            username,
+            username,
+            username,
+            username,
+            username,
         )
-        friend_rows = cur.fetchall()
 
-        cur.execute(
+        unread_rows = await conn.fetch(
             "SELECT sender, COUNT(*) FROM chat_messages "
-            "WHERE receiver = %s AND is_read = FALSE GROUP BY sender",
-            (username,),
+            "WHERE receiver = $1 AND is_read = FALSE GROUP BY sender",
+            username,
         )
-        unread_map = {row[0]: row[1] for row in cur.fetchall()}
+        unread_map = {row[0]: row[1] for row in unread_rows}
 
-        cur.execute(
+        last_rows = await conn.fetch(
             """
             SELECT DISTINCT ON (other) other, message, sender, created_at, is_recalled
             FROM (
-                SELECT CASE WHEN sender = %s THEN receiver ELSE sender END AS other,
+                SELECT CASE WHEN sender = $1 THEN receiver ELSE sender END AS other,
                        message, sender, created_at, is_recalled
                 FROM chat_messages
-                WHERE sender = %s OR receiver = %s
+                WHERE sender = $2 OR receiver = $3
             ) t
             ORDER BY other, created_at DESC
             """,
-            (username, username, username),
+            username,
+            username,
+            username,
         )
-        last_msg_map = {row[0]: row for row in cur.fetchall()}
+        last_msg_map = {row[0]: row for row in last_rows}
 
     friends = []
     for friend_username, friend_nickname, friend_avatar in friend_rows:
@@ -223,42 +239,48 @@ def get_friends(current_user: dict = Depends(get_current_user)):
 
 
 @router.get("/history/{friend_username}")
-def get_chat_history(
+async def get_chat_history(
     friend_username: str,
     limit: int = Query(200, ge=1, le=500),
     current_user: dict = Depends(get_current_user),
 ):
     username = current_user["username"]
-    with db_cursor(commit=True) as cur:
+    async with db_transaction() as conn:
         # 只有存在未读时才写库，避免每次打开会话都产生无用 UPDATE
-        cur.execute(
-            "SELECT 1 FROM chat_messages WHERE sender = %s AND receiver = %s "
+        has_unread = await conn.fetchval(
+            "SELECT 1 FROM chat_messages WHERE sender = $1 AND receiver = $2 "
             "AND is_read = FALSE LIMIT 1",
-            (friend_username, username),
+            friend_username,
+            username,
         )
-        if cur.fetchone():
-            cur.execute(
+        if has_unread:
+            await conn.execute(
                 "UPDATE chat_messages SET is_read = TRUE "
-                "WHERE sender = %s AND receiver = %s AND is_read = FALSE",
-                (friend_username, username),
+                "WHERE sender = $1 AND receiver = $2 AND is_read = FALSE",
+                friend_username,
+                username,
             )
 
         # UNION ALL 让两个方向分别命中 (sender, receiver) 索引；只取最近 limit 条
-        cur.execute(
+        records = await conn.fetch(
             """
             SELECT * FROM (
                 SELECT id, sender, receiver, message, is_read, is_recalled, created_at
-                FROM chat_messages WHERE sender = %s AND receiver = %s
+                FROM chat_messages WHERE sender = $1 AND receiver = $2
                 UNION ALL
                 SELECT id, sender, receiver, message, is_read, is_recalled, created_at
-                FROM chat_messages WHERE sender = %s AND receiver = %s
+                FROM chat_messages WHERE sender = $3 AND receiver = $4
             ) t
             ORDER BY created_at DESC
-            LIMIT %s
+            LIMIT $5
             """,
-            (username, friend_username, friend_username, username, limit),
+            username,
+            friend_username,
+            friend_username,
+            username,
+            limit,
         )
-        records = list(reversed(cur.fetchall()))
+        records = list(reversed(records))
 
     history = []
     for row in records:
@@ -299,7 +321,7 @@ def _detect_image_extension(data: bytes) -> str | None:
 
 
 @router.post("/upload")
-def upload_image(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
+async def upload_image(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
     if not r2_client or not settings.R2_BUCKET_NAME or not settings.R2_PUBLIC_URL:
         raise HTTPException(status_code=500, detail="服务器未正确配置 Cloudflare R2 存储环境变量")
 
@@ -323,7 +345,9 @@ def upload_image(file: UploadFile = File(...), current_user: dict = Depends(get_
         stream.seek(0)
 
         unique_filename = f"{uuid.uuid4()}.{file_extension}"
-        r2_client.upload_fileobj(
+        # boto3 是同步库，放到线程池执行，避免阻塞事件循环
+        await run_in_threadpool(
+            r2_client.upload_fileobj,
             stream,
             settings.R2_BUCKET_NAME,
             unique_filename,
@@ -364,48 +388,45 @@ class ConnectionManager:
             except Exception:  # noqa: BLE001 - 单个连接异常不影响其它连接
                 pass
 
-    @staticmethod
-    def _persist_message(message: str, sender: str, receiver: str) -> int | None:
-        """同步落库（在线程池中执行），非好友或失败返回 None。"""
+    async def send_direct_message(self, message: str, sender: str, receiver: str) -> int | None:
+        """落库并转发给接收方；非好友或写入失败返回 None。"""
         try:
-            with db_cursor(commit=True) as cur:
-                if not _are_friends(cur, sender, receiver):
+            async with db_transaction() as conn:
+                if not await _are_friends(conn, sender, receiver):
                     return None
-                cur.execute(
-                    "INSERT INTO chat_messages (sender, receiver, message) VALUES (%s, %s, %s) RETURNING id",
-                    (sender, receiver, message),
+                message_id = await conn.fetchval(
+                    "INSERT INTO chat_messages (sender, receiver, message) VALUES ($1, $2, $3) RETURNING id",
+                    sender,
+                    receiver,
+                    message,
                 )
-                return cur.fetchone()[0]
         except Exception as exc:  # noqa: BLE001
             print(f"💾 写入消息历史失败: {exc}")
             return None
 
-    @staticmethod
-    def _mark_read(owner: str, other: str):
-        with db_cursor(commit=True) as cur:
-            cur.execute(
-                "UPDATE chat_messages SET is_read = TRUE "
-                "WHERE sender = %s AND receiver = %s AND is_read = FALSE",
-                (other, owner),
-            )
-
-    @staticmethod
-    def _recall(message_id: int, sender: str):
-        with db_cursor(commit=True) as cur:
-            cur.execute(
-                "UPDATE chat_messages SET is_recalled = TRUE WHERE id = %s AND sender = %s",
-                (message_id, sender),
-            )
-
-    async def send_direct_message(self, message: str, sender: str, receiver: str) -> int | None:
-        """落库并转发给接收方；非好友或写入失败返回 None。"""
-        message_id = await run_in_threadpool(self._persist_message, message, sender, receiver)
-        if message_id is None:
-            return None
         await self.send_to_user(
             receiver, {"type": "msg", "id": message_id, "from": sender, "message": message}
         )
         return message_id
+
+    @staticmethod
+    async def mark_read(owner: str, other: str):
+        async with db_transaction() as conn:
+            await conn.execute(
+                "UPDATE chat_messages SET is_read = TRUE "
+                "WHERE sender = $1 AND receiver = $2 AND is_read = FALSE",
+                other,
+                owner,
+            )
+
+    @staticmethod
+    async def recall(message_id: int, sender: str):
+        async with db_transaction() as conn:
+            await conn.execute(
+                "UPDATE chat_messages SET is_recalled = TRUE WHERE id = $1 AND sender = $2",
+                message_id,
+                sender,
+            )
 
 
 manager = ConnectionManager()
@@ -441,13 +462,13 @@ async def websocket_endpoint(websocket: WebSocket, username: str, token: str = "
 
             elif msg_type == "read":
                 if target_user:
-                    await run_in_threadpool(manager._mark_read, username, target_user)
+                    await manager.mark_read(username, target_user)
                     await manager.send_to_user(target_user, {"type": "read", "from": username})
 
             elif msg_type == "recall":
                 message_id = data.get("message_id")
                 if message_id and target_user:
-                    await run_in_threadpool(manager._recall, message_id, username)
+                    await manager.recall(message_id, username)
                     await manager.send_to_user(
                         target_user, {"type": "recall", "from": username, "message_id": message_id}
                     )

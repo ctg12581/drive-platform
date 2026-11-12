@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-from app.core.db import db_cursor
+from app.core.db import db_transaction
 from app.modules.auth.service import get_current_user
 
 router = APIRouter(prefix="/drive", tags=["DRIVE 人格分析"])
@@ -40,7 +40,7 @@ def build_synthesis(scores: dict[str, int]) -> str:
 
 
 @router.post("/evaluate")
-def evaluate(data: DriveEvaluateRequest, current_user: dict = Depends(get_current_user)):
+async def evaluate(data: DriveEvaluateRequest, current_user: dict = Depends(get_current_user)):
     """对当前登录用户的五维等级进行评测并记录历史。"""
     username = current_user["username"]
     grades = {
@@ -52,12 +52,17 @@ def evaluate(data: DriveEvaluateRequest, current_user: dict = Depends(get_curren
     }
     scores = {key: GRADE_SCORE[grade] for key, grade in grades.items()}
 
-    with db_cursor(commit=True) as cur:
-        cur.execute(
+    async with db_transaction() as conn:
+        await conn.execute(
             "INSERT INTO drive_records "
             "(username, d_grade, r_grade, i_grade, v_grade, e_grade) "
-            "VALUES (%s, %s, %s, %s, %s, %s)",
-            (username, grades["d"], grades["r"], grades["i"], grades["v"], grades["e"]),
+            "VALUES ($1, $2, $3, $4, $5, $6)",
+            username,
+            grades["d"],
+            grades["r"],
+            grades["i"],
+            grades["v"],
+            grades["e"],
         )
 
     return {

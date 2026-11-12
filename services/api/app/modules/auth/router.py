@@ -1,8 +1,9 @@
 # app/modules/auth/router.py
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 
-from app.core.db import db_cursor
+from app.core.db import db_conn, db_transaction
 from .service import create_access_token, get_current_user, hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["Auth 身份验证模块"])
@@ -19,29 +20,32 @@ class ProfileUpdateSchema(BaseModel):
 
 
 @router.post("/register")
-def register(user: UserAuthSchema):
+async def register(user: UserAuthSchema):
     # 'admin' 为系统保留账号，禁止通过公开注册抢占（管理员由 ADMIN_PASSWORD 引导）
     if user.username.lower() == "admin":
         raise HTTPException(status_code=400, detail="该用户名为系统保留，无法注册")
-    with db_cursor(commit=True) as cur:
-        cur.execute("SELECT id FROM users WHERE username = %s", (user.username,))
-        if cur.fetchone():
-            raise HTTPException(status_code=400, detail="该用户名已被注册")
 
-        cur.execute(
-            "INSERT INTO users (username, password_hash) VALUES (%s, %s)",
-            (user.username, hash_password(user.password)),
+    async with db_transaction() as conn:
+        exists = await conn.fetchval("SELECT id FROM users WHERE username = $1", user.username)
+        if exists:
+            raise HTTPException(status_code=400, detail="该用户名已被注册")
+        password_hash = await run_in_threadpool(hash_password, user.password)
+        await conn.execute(
+            "INSERT INTO users (username, password_hash) VALUES ($1, $2)",
+            user.username,
+            password_hash,
         )
     return {"success": True, "message": "注册成功，请登录"}
 
 
 @router.post("/login")
-def login(user: UserAuthSchema):
-    with db_cursor() as cur:
-        cur.execute("SELECT password_hash FROM users WHERE username = %s", (user.username,))
-        record = cur.fetchone()
+async def login(user: UserAuthSchema):
+    async with db_conn() as conn:
+        record = await conn.fetchrow(
+            "SELECT password_hash FROM users WHERE username = $1", user.username
+        )
 
-    if not record or not verify_password(user.password, record[0]):
+    if not record or not await run_in_threadpool(verify_password, user.password, record[0]):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户名或密码错误")
 
     return {
@@ -52,24 +56,25 @@ def login(user: UserAuthSchema):
 
 
 @router.post("/profile")
-def update_profile(data: ProfileUpdateSchema, current_user: dict = Depends(get_current_user)):
-    with db_cursor(commit=True) as cur:
-        cur.execute(
-            "UPDATE users SET nickname = %s, avatar_url = %s WHERE username = %s",
-            (data.nickname.strip(), data.avatar_url.strip(), current_user["username"]),
+async def update_profile(data: ProfileUpdateSchema, current_user: dict = Depends(get_current_user)):
+    async with db_transaction() as conn:
+        await conn.execute(
+            "UPDATE users SET nickname = $1, avatar_url = $2 WHERE username = $3",
+            data.nickname.strip(),
+            data.avatar_url.strip(),
+            current_user["username"],
         )
     return {"success": True, "message": "个人资料更新成功"}
 
 
 @router.get("/profile/{target_username}")
-def get_user_profile(target_username: str):
-    with db_cursor() as cur:
-        cur.execute(
+async def get_user_profile(target_username: str):
+    async with db_conn() as conn:
+        row = await conn.fetchrow(
             "SELECT username, COALESCE(nickname, username), COALESCE(avatar_url, '👤') "
-            "FROM users WHERE username = %s",
-            (target_username,),
+            "FROM users WHERE username = $1",
+            target_username,
         )
-        row = cur.fetchone()
 
     if not row:
         raise HTTPException(status_code=404, detail="该用户不存在")

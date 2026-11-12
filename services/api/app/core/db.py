@@ -1,58 +1,91 @@
 # app/core/db.py
-"""数据库连接池、游标上下文与建表初始化。"""
-import threading
-from contextlib import contextmanager
+"""asyncpg 异步连接池、事务上下文与建表初始化。"""
+import asyncio
+import json
 
+import asyncpg
 import bcrypt
-import psycopg2
-from psycopg2 import pool
 
 from app.core.config import settings
 
-_pool = None
-_pool_lock = threading.Lock()
+_pool: asyncpg.Pool | None = None
+_pool_lock = asyncio.Lock()
 
 
-def get_pool() -> pool.ThreadedConnectionPool:
-    """惰性创建线程安全连接池（FastAPI 同步端点在线程池中执行）。"""
+async def _init_connection(conn: asyncpg.Connection):
+    """为每个连接注册 JSONB 编解码，使 JSONB 列可直接读写 Python 对象。"""
+    await conn.set_type_codec(
+        "jsonb",
+        encoder=json.dumps,
+        decoder=json.loads,
+        schema="pg_catalog",
+    )
+
+
+async def init_pool():
+    """创建全局异步连接池（在应用 lifespan 启动时调用）。"""
     global _pool
+    async with _pool_lock:
+        if _pool is None:
+            _pool = await asyncpg.create_pool(
+                dsn=settings.DATABASE_URL,
+                min_size=1,
+                max_size=max(1, settings.DB_POOL_MAX_CONN),
+                command_timeout=settings.DB_STATEMENT_TIMEOUT_MS / 1000,
+                init=_init_connection,
+            )
+
+
+async def close_pool():
+    global _pool
+    if _pool is not None:
+        await _pool.close()
+        _pool = None
+
+
+def get_pool() -> asyncpg.Pool:
     if _pool is None:
-        with _pool_lock:
-            if _pool is None:
-                _pool = pool.ThreadedConnectionPool(
-                    1,
-                    max(1, settings.DB_POOL_MAX_CONN),
-                    dsn=settings.DATABASE_URL,
-                    connect_timeout=10,
-                    options=f"-c statement_timeout={settings.DB_STATEMENT_TIMEOUT_MS}",
-                )
+        raise RuntimeError("数据库连接池尚未初始化")
     return _pool
 
 
-def get_db_connection():
-    """保留旧接口：从连接池取一个连接（调用方需自行归还）。"""
-    return get_pool().getconn()
+class _ConnContext:
+    """只读连接上下文：从池中借用一个连接，退出时自动归还。"""
+
+    async def __aenter__(self) -> asyncpg.Connection:
+        self._cm = get_pool().acquire()
+        return await self._cm.__aenter__()
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return await self._cm.__aexit__(exc_type, exc, tb)
 
 
-@contextmanager
-def db_cursor(commit: bool = False):
-    """数据库游标上下文管理器（连接来自连接池）。
+class _TxContext:
+    """写事务上下文：借连接 + 开启事务，正常退出提交、异常回滚。"""
 
-    统一处理连接的提交 / 回滚与归还，替代每个接口里重复的
-    try/finally 样板代码。异常会自动回滚。
-    """
-    conn = get_pool().getconn()
-    cur = conn.cursor()
-    try:
-        yield cur
-        if commit:
-            conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        cur.close()
-        get_pool().putconn(conn)
+    async def __aenter__(self) -> asyncpg.Connection:
+        self._conn_cm = get_pool().acquire()
+        self._conn = await self._conn_cm.__aenter__()
+        self._tx_cm = self._conn.transaction()
+        await self._tx_cm.__aenter__()
+        return self._conn
+
+    async def __aexit__(self, exc_type, exc, tb):
+        try:
+            await self._tx_cm.__aexit__(exc_type, exc, tb)
+        finally:
+            await self._conn_cm.__aexit__(exc_type, exc, tb)
+        return False
+
+
+def db_conn() -> _ConnContext:
+    """只读查询用：`async with db_conn() as conn:`"""
+    return _ConnContext()
+
+
+def db_transaction() -> _TxContext:
+    """写入用：`async with db_transaction() as conn:`"""
+    return _TxContext()
 
 
 # 需要统一为 TIMESTAMPTZ 的时间列（表名, 列名）
@@ -91,7 +124,6 @@ def _timestamp_migration_sql(table: str, column: str) -> str:
 
 # 全平台建表与历史数据平滑迁移语句（按顺序执行，可重复运行）。
 SCHEMA_STATEMENTS = [
-    # 1. 用户表（含管理员标志）
     """
     CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -106,13 +138,11 @@ SCHEMA_STATEMENTS = [
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS nickname VARCHAR(50);",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE;",
-    # 历史账号兼容：若库中尚无管理员，则将名为 admin 的既有账号提升为管理员（仅引导一次）
     """
     UPDATE users SET is_admin = TRUE
     WHERE username = 'admin'
       AND NOT EXISTS (SELECT 1 FROM users WHERE is_admin = TRUE);
     """,
-    # 2. 人格评测记录表
     """
     CREATE TABLE IF NOT EXISTS drive_records (
         id SERIAL PRIMARY KEY,
@@ -125,7 +155,6 @@ SCHEMA_STATEMENTS = [
         created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
     );
     """,
-    # 3. 双向好友关系表
     """
     CREATE TABLE IF NOT EXISTS friendships (
         id SERIAL PRIMARY KEY,
@@ -138,7 +167,6 @@ SCHEMA_STATEMENTS = [
     """,
     "ALTER TABLE friendships ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'pending';",
     "UPDATE friendships SET status = 'accepted' WHERE status IS NULL;",
-    # 4. 聊天消息表
     """
     CREATE TABLE IF NOT EXISTS chat_messages (
         id SERIAL PRIMARY KEY,
@@ -152,7 +180,6 @@ SCHEMA_STATEMENTS = [
     """,
     "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT FALSE;",
     "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS is_recalled BOOLEAN DEFAULT FALSE;",
-    # 5. 动态广场表
     """
     CREATE TABLE IF NOT EXISTS moments (
         id SERIAL PRIMARY KEY,
@@ -161,7 +188,6 @@ SCHEMA_STATEMENTS = [
         created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
     );
     """,
-    # 6. 公共默契度题库表
     """
     CREATE TABLE IF NOT EXISTS quiz_questions (
         id SERIAL PRIMARY KEY,
@@ -172,7 +198,6 @@ SCHEMA_STATEMENTS = [
     );
     """,
     "ALTER TABLE quiz_questions ADD COLUMN IF NOT EXISTS creator VARCHAR(50) DEFAULT 'admin';",
-    # 7. 用户出题主表
     """
     CREATE TABLE IF NOT EXISTS user_quizzes (
         id SERIAL PRIMARY KEY,
@@ -181,7 +206,6 @@ SCHEMA_STATEMENTS = [
         created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
     );
     """,
-    # 8. 用户预设答案表
     """
     CREATE TABLE IF NOT EXISTS user_quiz_questions (
         id SERIAL PRIMARY KEY,
@@ -192,7 +216,6 @@ SCHEMA_STATEMENTS = [
         UNIQUE(quiz_id, question_id)
     );
     """,
-    # 9. 挑战历史表
     """
     CREATE TABLE IF NOT EXISTS quiz_attempts (
         id SERIAL PRIMARY KEY,
@@ -204,7 +227,6 @@ SCHEMA_STATEMENTS = [
         UNIQUE(quiz_id, respondent_username)
     );
     """,
-    # 10. 高频查询索引
     "CREATE INDEX IF NOT EXISTS idx_chat_messages_sender_receiver ON chat_messages (sender, receiver);",
     "CREATE INDEX IF NOT EXISTS idx_chat_messages_receiver_unread ON chat_messages (receiver, is_read);",
     "CREATE INDEX IF NOT EXISTS idx_friendships_username ON friendships (username);",
@@ -219,40 +241,16 @@ SCHEMA_STATEMENTS = [
 ] + [_timestamp_migration_sql(t, c) for t, c in _TIMESTAMP_COLUMNS]
 
 
-def _ensure_default_admin():
-    """若尚无管理员且配置了 ADMIN_PASSWORD，则创建或提升初始管理员。"""
-    if not settings.ADMIN_PASSWORD:
-        return
-    username = (settings.ADMIN_USERNAME or "admin").strip() or "admin"
-    with db_cursor(commit=True) as cur:
-        cur.execute("SELECT 1 FROM users WHERE is_admin = TRUE LIMIT 1")
-        if cur.fetchone():
-            return
-        cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-        if cur.fetchone():
-            cur.execute("UPDATE users SET is_admin = TRUE WHERE username = %s", (username,))
-            print(f"✅ [DB] 已将既有账号 {username} 提升为管理员")
-        else:
-            password_hash = bcrypt.hashpw(
-                settings.ADMIN_PASSWORD.encode("utf-8"), bcrypt.gensalt()
-            ).decode("utf-8")
-            cur.execute(
-                "INSERT INTO users (username, password_hash, is_admin) VALUES (%s, %s, TRUE)",
-                (username, password_hash),
-            )
-            print(f"✅ [DB] 已创建初始管理员 {username}")
-
-
-def _init_search_indexes():
+async def _init_search_indexes():
     """为模糊搜索启用 pg_trgm 与 GIN 索引；扩展不可用时优雅降级，不阻断启动。"""
     try:
-        with db_cursor(commit=True) as cur:
-            cur.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm;")
-            cur.execute(
+        async with db_conn() as conn:
+            await conn.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm;")
+            await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_users_username_trgm "
                 "ON users USING gin (username gin_trgm_ops);"
             )
-            cur.execute(
+            await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_users_nickname_trgm "
                 "ON users USING gin (nickname gin_trgm_ops);"
             )
@@ -261,11 +259,36 @@ def _init_search_indexes():
         print(f"⚠️ [DB] pg_trgm 搜索索引初始化跳过（搜索仍可用但为全表扫描）: {exc}")
 
 
-def init_global_tables():
+async def _ensure_default_admin():
+    """若尚无管理员且配置了 ADMIN_PASSWORD，则创建或提升初始管理员。"""
+    if not settings.ADMIN_PASSWORD:
+        return
+    username = (settings.ADMIN_USERNAME or "admin").strip() or "admin"
+    async with db_transaction() as conn:
+        exists = await conn.fetchval("SELECT 1 FROM users WHERE is_admin = TRUE LIMIT 1")
+        if exists:
+            return
+        row = await conn.fetchrow("SELECT id FROM users WHERE username = $1", username)
+        if row:
+            await conn.execute("UPDATE users SET is_admin = TRUE WHERE username = $1", username)
+            print(f"✅ [DB] 已将既有账号 {username} 提升为管理员")
+        else:
+            password_hash = bcrypt.hashpw(
+                settings.ADMIN_PASSWORD.encode("utf-8"), bcrypt.gensalt()
+            ).decode("utf-8")
+            await conn.execute(
+                "INSERT INTO users (username, password_hash, is_admin) VALUES ($1, $2, TRUE)",
+                username,
+                password_hash,
+            )
+            print(f"✅ [DB] 已创建初始管理员 {username}")
+
+
+async def init_global_tables():
     """在服务启动时统一建表、索引与历史数据迁移。失败会抛出以便启动阶段暴露问题。"""
-    with db_cursor(commit=True) as cur:
+    async with db_conn() as conn:
         for statement in SCHEMA_STATEMENTS:
-            cur.execute(statement)
-    _init_search_indexes()
-    _ensure_default_admin()
+            await conn.execute(statement)
+    await _init_search_indexes()
+    await _ensure_default_admin()
     print("✅ [DB] 数据库表结构初始化成功")

@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
 from app.core.config import settings
-from app.core.db import init_global_tables
+from app.core.db import close_pool, init_global_tables, init_pool
 from app.modules.admin.router import router as admin_router
 from app.modules.anime.router import router as anime_router
 from app.modules.auth.router import router as auth_router
@@ -20,9 +20,11 @@ from app.modules.search.router import router as search_router
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    """应用启动时初始化数据库表结构。"""
-    init_global_tables()
+    """应用启动时创建连接池并初始化数据库表结构，退出时关闭连接池。"""
+    await init_pool()
+    await init_global_tables()
     yield
+    await close_pool()
 
 
 app = FastAPI(title="DRIVE Space Multi-Feature Platform", lifespan=lifespan)

@@ -1,22 +1,21 @@
 # app/modules/admin/router.py
-import json
-
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from app.core.db import db_cursor
+from app.core.db import db_conn, db_transaction
 from app.core.timeutil import to_iso_utc
 from app.modules.auth.service import get_current_user
 
 router = APIRouter(prefix="/admin", tags=["Admin 后台管理模块"])
 
 
-def get_current_admin(current_user: dict = Depends(get_current_user)):
+async def get_current_admin(current_user: dict = Depends(get_current_user)):
     """仅允许数据库 is_admin 为真的账号访问后台接口。"""
-    with db_cursor() as cur:
-        cur.execute("SELECT is_admin FROM users WHERE username = %s", (current_user["username"],))
-        row = cur.fetchone()
-    if not row or not row[0]:
+    async with db_conn() as conn:
+        is_admin = await conn.fetchval(
+            "SELECT is_admin FROM users WHERE username = $1", current_user["username"]
+        )
+    if not is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="您不是系统管理员，无权访问后台管理系统",
@@ -34,39 +33,36 @@ class BulkImportSchema(BaseModel):
 
 
 @router.get("/dashboard/stats", dependencies=[Depends(get_current_admin)])
-def get_dashboard_stats():
-    with db_cursor() as cur:
-        cur.execute("SELECT COUNT(*) FROM users")
-        total_users = cur.fetchone()[0]
-
-        cur.execute("SELECT COUNT(*) FROM moments")
-        total_moments = cur.fetchone()[0]
-
-        cur.execute("SELECT COUNT(*) FROM quiz_questions WHERE creator = 'admin'")
-        total_questions = cur.fetchone()[0]
-
-        cur.execute("SELECT COUNT(*) FROM quiz_attempts")
-        total_attempts = cur.fetchone()[0]
+async def get_dashboard_stats():
+    async with db_conn() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT
+              (SELECT COUNT(*) FROM users) AS total_users,
+              (SELECT COUNT(*) FROM moments) AS total_moments,
+              (SELECT COUNT(*) FROM quiz_questions WHERE creator = 'admin') AS total_questions,
+              (SELECT COUNT(*) FROM quiz_attempts) AS total_attempts
+            """
+        )
 
     return {
         "success": True,
         "stats": {
-            "total_users": total_users,
-            "total_moments": total_moments,
-            "total_questions": total_questions,
-            "total_attempts": total_attempts,
+            "total_users": row["total_users"],
+            "total_moments": row["total_moments"],
+            "total_questions": row["total_questions"],
+            "total_attempts": row["total_attempts"],
         },
     }
 
 
 @router.get("/quiz/questions", dependencies=[Depends(get_current_admin)])
-def admin_get_questions():
-    with db_cursor() as cur:
-        cur.execute(
+async def admin_get_questions():
+    async with db_conn() as conn:
+        records = await conn.fetch(
             "SELECT id, question_text, options FROM quiz_questions "
             "WHERE creator = 'admin' ORDER BY id DESC"
         )
-        records = cur.fetchall()
     return {
         "success": True,
         "questions": [{"id": r[0], "text": r[1], "options": r[2]} for r in records],
@@ -74,17 +70,17 @@ def admin_get_questions():
 
 
 @router.post("/quiz/questions", dependencies=[Depends(get_current_admin)])
-def admin_create_question(data: AdminQuestionSchema):
-    with db_cursor(commit=True) as cur:
-        cur.execute(
+async def admin_create_question(data: AdminQuestionSchema):
+    async with db_transaction() as conn:
+        question_id = await conn.fetchval(
             """
             INSERT INTO quiz_questions (question_text, options, creator)
-            VALUES (%s, %s, 'admin')
+            VALUES ($1, $2, 'admin')
             RETURNING id
             """,
-            (data.question_text.strip(), json.dumps(data.options, ensure_ascii=False)),
+            data.question_text.strip(),
+            data.options,
         )
-        question_id = cur.fetchone()[0]
     return {
         "success": True,
         "question_id": question_id,
@@ -93,26 +89,26 @@ def admin_create_question(data: AdminQuestionSchema):
 
 
 @router.delete("/quiz/questions/{question_id}", dependencies=[Depends(get_current_admin)])
-def admin_delete_question(question_id: int):
-    with db_cursor(commit=True) as cur:
-        cur.execute(
+async def admin_delete_question(question_id: int):
+    async with db_transaction() as conn:
+        await conn.execute(
             """
             DELETE FROM quiz_questions
-            WHERE id = %s AND (creator = 'admin' OR creator = 'system' OR creator IS NULL)
+            WHERE id = $1 AND (creator = 'admin' OR creator = 'system' OR creator IS NULL)
             """,
-            (question_id,),
+            question_id,
         )
     return {"success": True, "message": "公共题目已成功从系统题库中删除"}
 
 
 @router.get("/users", dependencies=[Depends(get_current_admin)])
-def admin_get_users(
+async def admin_get_users(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ):
     """用户监控列表：先分组聚合近 3 类计数，再一次性关联，避免逐用户子查询。"""
-    with db_cursor() as cur:
-        cur.execute(
+    async with db_conn() as conn:
+        records = await conn.fetch(
             """
             WITH moment_cnt AS (
                 SELECT username, COUNT(*) AS cnt FROM moments GROUP BY username
@@ -133,13 +129,13 @@ def admin_get_users(
             LEFT JOIN drive_cnt dc ON dc.username = u.username
             LEFT JOIN attempt_cnt ac ON ac.username = u.username
             ORDER BY u.created_at DESC
-            LIMIT %s OFFSET %s
+            LIMIT $1 OFFSET $2
             """,
-            (limit, offset),
+            limit,
+            offset,
         )
-        records = cur.fetchall()
 
-    total = records[0][8] if records else 0
+    total = records[0]["total"] if records else 0
     users = [
         {
             "id": r[0],
@@ -157,16 +153,17 @@ def admin_get_users(
 
 
 @router.post("/quiz/questions/bulk", dependencies=[Depends(get_current_admin)])
-def admin_bulk_import_questions(data: BulkImportSchema):
+async def admin_bulk_import_questions(data: BulkImportSchema):
     try:
-        with db_cursor(commit=True) as cur:
+        async with db_transaction() as conn:
             for question in data.questions:
-                cur.execute(
+                await conn.execute(
                     """
                     INSERT INTO quiz_questions (question_text, options, creator)
-                    VALUES (%s, %s, 'admin')
+                    VALUES ($1, $2, 'admin')
                     """,
-                    (question.question_text.strip(), json.dumps(question.options, ensure_ascii=False)),
+                    question.question_text.strip(),
+                    question.options,
                 )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"批量导入异常: {exc}") from exc
