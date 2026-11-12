@@ -94,6 +94,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { apiFetch } from '../utils/api'
+import { cachedFetch } from '../utils/cache'
 
 const characters = ref([])
 const loading = ref(true)
@@ -103,14 +104,19 @@ const detail = ref(null)
 const fetchList = async () => {
   loading.value = true
   try {
-    const params = searchQuery.value.trim()
-      ? `?keyword=${encodeURIComponent(searchQuery.value.trim())}`
-      : ''
-    const res = await apiFetch(`/anime/list${params}`)
-    const data = await res.json()
-    if (res.ok && data.success) {
-      characters.value = data.characters || []
-    }
+    const keyword = searchQuery.value.trim()
+    const params = keyword ? `?keyword=${encodeURIComponent(keyword)}` : ''
+    // 动漫资料基本不变，按关键词缓存 10 分钟
+    characters.value = await cachedFetch(
+      `anime:list:${keyword}`,
+      async () => {
+        const res = await apiFetch(`/anime/list${params}`)
+        const data = await res.json()
+        if (!res.ok || !data.success) throw new Error('获取动漫列表失败')
+        return data.characters || []
+      },
+      { ttl: 10 * 60 * 1000 },
+    )
   } catch {
     characters.value = []
   } finally {

@@ -174,6 +174,8 @@ import { useMomentsStore } from '../store/home'
 import { useChatStore } from '../store/chat'
 import { formatLocalTime } from '../utils/date'
 import { apiFetch } from '../utils/api'
+import { cachedFetch } from '../utils/cache'
+import { fetchUserProfile } from '../utils/userProfile'
 
 const authStore = useAuthStore()
 const momentsStore = useMomentsStore()
@@ -249,13 +251,20 @@ const fetchList = async (kind) => {
   st.loading.value = true
   try {
     const apiKind = kind === 'rank' ? 'rank' : 'news'
-    const res = await apiFetch(`/news/hot?limit=50&kind=${apiKind}`)
-    const data = await res.json()
-    if (res.ok && data.success) {
-      st.pool.value = data.news || []
-      st.offset.value = 0
-      st.items.value = pickFromPool(st.pool.value, 0)
-    }
+    // 热点/榜单由后端每 15 分钟刷新快照，前端缓存 5 分钟即可，避免每次进首页都拉
+    const list = await cachedFetch(
+      `news:${apiKind}`,
+      async () => {
+        const res = await apiFetch(`/news/hot?limit=50&kind=${apiKind}`)
+        const data = await res.json()
+        if (!res.ok || !data.success) throw new Error('获取新闻失败')
+        return data.news || []
+      },
+      { ttl: 5 * 60 * 1000 },
+    )
+    st.pool.value = list
+    st.offset.value = 0
+    st.items.value = pickFromPool(list, 0)
   } catch (err) {
     console.error('获取列表异常:', err)
   } finally {
@@ -371,18 +380,7 @@ const applyNewPosts = () => {
 // 获取他人主页名片卡和TA的帖子
 const openUserProfile = async (targetUsername) => {
   try {
-    const [profileRes, postsRes] = await Promise.all([
-      apiFetch(`/auth/profile/${targetUsername}`),
-      apiFetch(`/moments/user/${targetUsername}`)
-    ])
-    if (profileRes.ok && postsRes.ok) {
-      const user = await profileRes.json()
-      const userPosts = await postsRes.json()
-      activeProfile.value = {
-        user: user,
-        posts: userPosts.moments
-      }
-    }
+    activeProfile.value = await fetchUserProfile(targetUsername)
   } catch {
     alert('无法加载该用户的主页')
   }

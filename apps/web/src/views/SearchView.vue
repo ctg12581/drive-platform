@@ -74,6 +74,7 @@
 import { ref } from 'vue'
 import { isUrl } from '@drive/shared'
 import { apiFetch } from '../utils/api'
+import { fetchUserProfile } from '../utils/userProfile'
 import { useRouter } from 'vue-router'
 import { formatLocalTime } from '../utils/date'
 
@@ -135,18 +136,7 @@ const goToNotifications = () => {
 // 点击卡片直接打开该用户的个人主页弹窗
 const openUserProfile = async (targetUsername) => {
   try {
-    const [profileRes, postsRes] = await Promise.all([
-      apiFetch(`/auth/profile/${targetUsername}`),
-      apiFetch(`/moments/user/${targetUsername}`)
-    ])
-    if (profileRes.ok && postsRes.ok) {
-      const user = await profileRes.json()
-      const userPosts = await postsRes.json()
-      activeProfile.value = {
-        user: user,
-        posts: userPosts.moments
-      }
-    }
+    activeProfile.value = await fetchUserProfile(targetUsername)
   } catch {
     alert('无法加载该用户的主页')
   }

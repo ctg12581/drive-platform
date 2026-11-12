@@ -138,6 +138,7 @@ import { useAuthStore } from './store/auth'
 import { useChatStore } from './store/chat'
 import { useMomentsStore } from './store/home'
 import { apiFetch } from './utils/api'
+import { invalidateCache } from './utils/cache'
 import { useRouter, useRoute } from 'vue-router'
 
 const authStore = useAuthStore()
@@ -176,6 +177,8 @@ const handleGlobalPublish = async () => {
         await router.push('/home')
       }
       momentsStore.requestRefresh()
+      // 自己发了动态，个人主页（含帖子）缓存失效，避免看到旧数据
+      invalidateCache(`profile:${authStore.username}`)
     } else {
       const data = await res.json().catch(() => ({}))
       alert(data.detail || '发布失败')

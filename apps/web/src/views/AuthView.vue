@@ -134,6 +134,7 @@ import { useChatStore } from '../store/chat'
 import { useRouter } from 'vue-router'
 import { formatLocalTime } from '../utils/date'
 import { apiFetch, API_BASE } from '../utils/api'
+import { invalidateCache } from '../utils/cache'
 
 const authStore = useAuthStore()
 const chatStore = useChatStore()
@@ -235,6 +236,8 @@ const updateProfile = async () => {
     if (res.ok) {
       authStore.updateProfileState(profileForm.nickname.trim(), profileForm.avatar_url.trim())
       showEditModal.value = false
+      // 资料变更后让主页缓存失效，避免别人/自己再打开看到旧昵称头像
+      invalidateCache(`profile:${authStore.username}`)
       fetchMyPosts() // 重新刷一遍我的帖子，让帖子里的头像昵称也实时同步
     }
   } catch (err) {

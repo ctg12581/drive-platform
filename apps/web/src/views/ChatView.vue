@@ -171,6 +171,7 @@ import { useAuthStore } from '../store/auth'
 import { useChatStore } from '../store/chat'
 import { formatLocalTime } from '../utils/date'
 import { apiFetch, API_BASE } from '../utils/api'
+import { fetchUserProfile } from '../utils/userProfile'
 
 const authStore = useAuthStore()
 const chatStore = useChatStore()
@@ -377,25 +378,8 @@ const sendMessage = () => {
 
 const openUserProfile = async (targetUsername) => {
   try {
-    // 1. 纯净流：只拉取用户资料与用户动态，彻底删除对 /quiz 的调用
-    const [profileRes, postsRes] = await Promise.all([
-      apiFetch(`/auth/profile/${targetUsername}`),
-      apiFetch(`/moments/user/${targetUsername}`)
-    ])
-    
-    // 2. 仅校验这两者的状态
-    if (profileRes.ok && postsRes.ok) {
-      const user = await profileRes.json()
-      const userPosts = await postsRes.json()
-      
-      // 装载弹窗
-      activeProfile.value = {
-        user: user,
-        posts: userPosts.moments
-      }
-    } else {
-      alert('加载用户数据失败')
-    }
+    // 走 60s 缓存，重复点开同一人不重复请求
+    activeProfile.value = await fetchUserProfile(targetUsername)
   } catch (err) {
     console.error('加载主页异常:', err)
     alert('无法加载该用户的主页')
