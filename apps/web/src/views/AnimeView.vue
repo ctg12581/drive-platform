@@ -213,7 +213,7 @@ const coverStyle = (c, idx) => {
   const s = String(c.id ?? '') + (c.name || '') + idx
   for (let i = 0; i < s.length; i++) { h = (h * 31 + s.charCodeAt(i)) >>> 0 }
   const background = REGION_THEME[c.region]?.grad || GRADS[h % GRADS.length]
-  return { background, height: 132 + (h % 4) * 16 + 'px' }
+  return { background, height: 150 + (h % 4) * 16 + 'px' }
 }
 
 const loadRegions = async () => {
@@ -501,8 +501,10 @@ onMounted(() => {
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  object-position: top center;
+  object-fit: contain;
+  object-position: center;
+  padding: 8px;
+  box-sizing: border-box;
 }
 .anime-cover-emoji { font-size: 2.6rem; filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.12)); }
 .anime-card-info { padding: 9px 10px 11px; }
@@ -525,13 +527,13 @@ onMounted(() => {
 .work-card:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(0, 0, 0, 0.09); }
 .work-cover {
   position: relative;
-  height: 118px;
+  height: 150px;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
 }
-.work-cover-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: top center; }
+.work-cover-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; object-position: center; padding: 8px; box-sizing: border-box; }
 .work-cover-emoji { font-size: 2.4rem; }
 .work-info { padding: 9px 10px 11px; }
 .work-name {
@@ -605,12 +607,12 @@ onMounted(() => {
 }
 .anime-detail-cover {
   position: relative;
-  height: 140px;
+  height: 200px;
   display: flex; align-items: center; justify-content: center;
 }
 .anime-detail-cover-img {
   width: 100%; height: 100%;
-  object-fit: cover; object-position: top center;
+  object-fit: contain; object-position: center; padding: 10px; box-sizing: border-box;
 }
 .anime-detail-cover-emoji { font-size: 4rem; filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.14)); }
 .anime-detail-inner { padding: 18px 22px 24px; overflow-y: auto; }
