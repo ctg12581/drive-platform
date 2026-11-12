@@ -1,0 +1,36 @@
+# === Python 编译缓存文件 ===
+__pycache__/
+*.py[cod]
+*$py.class
+
+# === 虚拟环境（极其重要，切勿上传，Render 会自己根据 requirements 重新装） ===
+.venv/
+venv/
+ENV/
+env/
+/bin/
+/lib/
+/include/
+pip-selfcheck.json
+
+# === 编辑器与 IDE 配置 ===
+.vscode/
+.idea/
+*.swp
+.project
+.pydevproject
+
+# === 敏感信息与本地配置文件 ===
+# 如果您以后把 API Key 或密码写在 .env 文件里，这个规则能防止它泄露到 GitHub
+.env
+.env.local
+.env.development.local
+.env.production.local
+
+# === 日志文件 ===
+*.log
+logs/
+
+.env
+__pycache__/
+*.pyc

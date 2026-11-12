@@ -1,0 +1,13 @@
+{
+  "name": "drive-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DRIVE 人格评估平台 · monorepo（用户端 + 管理后台 + FastAPI 后端）",
+  "scripts": {
+    "dev:web": "pnpm --filter drive-model-frontend dev",
+    "dev:admin": "pnpm --filter drive-admin-frontend dev",
+    "build:web": "pnpm --filter drive-model-frontend build",
+    "build:admin": "pnpm --filter drive-admin-frontend build",
+    "api": "python services/api/server.py"
+  }
+}
