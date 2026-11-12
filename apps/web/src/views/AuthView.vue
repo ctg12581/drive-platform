@@ -82,7 +82,9 @@
             <article v-for="(post, idx) in myPosts" :key="post.id" class="note-card">
               <div class="note-cover" :style="noteCoverStyle(post, idx)">
                 <img v-if="noteImage(post)" :src="noteImage(post)" class="cover-img" loading="lazy" alt="" @error="onCoverError" />
-                <span v-else class="cover-emoji">{{ noteEmoji(post, idx) }}</span>
+                <div v-else class="cover-text">
+                  <span class="cover-text-inner">{{ post.content }}</span>
+                </div>
               </div>
               <div class="note-body">
                 <h4 class="note-title">{{ post.content }}</h4>
@@ -385,6 +387,27 @@ const handleLogout = () => {
 }
 .note-cover { position: relative; width: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; }
 .cover-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.cover-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 12px;
+  overflow: hidden;
+}
+.cover-text-inner {
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1.5;
+  color: #3a2b30;
+  text-align: center;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 .cover-emoji { font-size: 2.2rem; filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.12)); }
 .note-body { padding: 9px 10px 11px; }
 .note-title {

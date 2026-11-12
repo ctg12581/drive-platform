@@ -50,9 +50,10 @@
         >
           <div class="note-cover" :class="{ 'has-image': coverImage(n) }" :style="coverStyle(n, idx)">
             <img v-if="coverImage(n)" :src="coverImage(n)" class="cover-img" loading="lazy" alt="" @error="onCoverError" />
-            <template v-else>
-              <span class="cover-emoji">{{ noteEmoji(n, idx) }}</span>
-            </template>
+            <div v-else class="cover-text">
+              <span class="cover-text-inner">{{ coverText(n) }}</span>
+              <span class="cover-watermark">{{ noteEmoji(n, idx) }}</span>
+            </div>
             <span v-if="currentSubTab === 'rank'" class="cover-rank">{{ (activeList.page - 1) * NEWS_PAGE_SIZE + idx + 1 }}</span>
             <span v-else-if="n.category" class="cover-chip">{{ n.category }}</span>
             <span class="cover-jump">↗</span>
@@ -106,9 +107,10 @@
           >
             <div class="note-cover" :class="{ 'has-image': coverImage(post) }" :style="coverStyle(post, idx)">
               <img v-if="coverImage(post)" :src="coverImage(post)" class="cover-img" loading="lazy" alt="" @error="onCoverError" />
-              <template v-else>
-                <span class="cover-emoji">{{ noteEmoji(post, idx) }}</span>
-              </template>
+              <div v-else class="cover-text">
+                <span class="cover-text-inner">{{ coverText(post) }}</span>
+                <span class="cover-watermark">{{ noteEmoji(post, idx) }}</span>
+              </div>
             </div>
             <div class="note-body">
               <h3 class="note-title">{{ post.content }}</h3>
@@ -244,6 +246,11 @@ const coverImage = (item) => {
 }
 const onCoverError = (e) => {
   if (e && e.target) e.target.style.display = 'none'
+}
+// 无图笔记：直接把文字做成封面（仿小红书文字笔记）
+const coverText = (item) => {
+  const t = (item && (item.content || item.title)) || ''
+  return t.trim()
 }
 
 const likeCount = (item, idx) => {
@@ -603,6 +610,37 @@ const openUserProfile = async (targetUsername) => {
   font-size: 2.4rem;
   filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.12));
   z-index: 1;
+}
+/* 无图笔记：文字即封面 */
+.cover-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 13px;
+  z-index: 1;
+  overflow: hidden;
+}
+.cover-text-inner {
+  font-size: 0.84rem;
+  font-weight: 800;
+  line-height: 1.52;
+  color: #3a2b30;
+  text-align: center;
+  word-break: break-word;
+  letter-spacing: 0.2px;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.cover-watermark {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  font-size: 1.05rem;
+  opacity: 0.5;
 }
 .cover-chip {
   position: absolute;
