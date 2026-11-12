@@ -1,0 +1,1 @@
+import{o as e,t}from"./index-C0oEHB2Z.js";function n(n,{force:r=!1}={}){return t(`profile:${n}`,async()=>{let[t,r]=await Promise.all([e(`/auth/profile/${n}`),e(`/moments/user/${n}`)]);if(!t.ok||!r.ok)throw Error(`加载用户数据失败`);let[i,a]=await Promise.all([t.json(),r.json()]);return{user:i,posts:a.moments||[]}},{ttl:6e4,force:r})}export{n as t};
