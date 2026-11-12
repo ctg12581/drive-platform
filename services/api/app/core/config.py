@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     NEWS_CRAWL_ENABLED: bool = True
     NEWS_CRAWL_INTERVAL_MINUTES: int = 15
 
-    # 动漫人物图鉴定时爬取：是否启用、抓取间隔（分钟）
+    # 动漫图鉴定时爬取：是否启用、抓取间隔（分钟）
     # MAX_PER_REGION = 0 表示「不限制角色总数」，尽可能多抓；正整数则按该值截断
     ANIME_CRAWL_ENABLED: bool = True
     # 动漫资料变化很慢，默认 7 天刷新一次即可（可用环境变量覆盖）

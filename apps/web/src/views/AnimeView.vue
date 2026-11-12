@@ -2,7 +2,7 @@
 <template>
   <div class="anime-container">
     <div class="anime-header">
-      <h2 class="anime-title">🌏 动漫人物图鉴</h2>
+      <h2 class="anime-title">🌏 动漫图鉴</h2>
       <p class="anime-subtitle">中日美三地 · 按动漫作品分类浏览</p>
     </div>
 

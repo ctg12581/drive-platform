@@ -1,5 +1,5 @@
 # app/modules/anime/router.py
-# 动漫人物图鉴模块：作品表 anime_works + 角色表 anime_characters（角色通过 work_id 关联作品）。
+# 动漫图鉴模块：作品表 anime_works + 角色表 anime_characters（角色通过 work_id 关联作品）。
 # 数据由后台爬虫（AniList 日/国漫 + TVmaze 美漫）落库；本模块只读，公开访问、无需登录。
 # 作品列表直接分页查询作品表（不做角色聚合）；角色数据在进入某部作品后再按 work_id 拉取。
 import json
@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.core.db import db_conn
 
-router = APIRouter(prefix="/anime", tags=["Anime 动漫人物图鉴"])
+router = APIRouter(prefix="/anime", tags=["Anime 动漫图鉴"])
 
 # 地区元数据：key 用于接口过滤，name 为图鉴短标签，full 为地区全称
 REGION_META = {

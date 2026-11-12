@@ -33,7 +33,7 @@ async def lifespan(_: FastAPI):
     if settings.NEWS_CRAWL_ENABLED:
         crawl_task = asyncio.create_task(crawl_loop())
 
-    # 后台定时爬取动漫人物图鉴（可通过 ANIME_CRAWL_ENABLED 关闭）
+    # 后台定时爬取动漫图鉴（可通过 ANIME_CRAWL_ENABLED 关闭）
     anime_crawl_task: asyncio.Task | None = None
     if settings.ANIME_CRAWL_ENABLED:
         anime_crawl_task = asyncio.create_task(anime_crawl_loop())

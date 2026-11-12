@@ -85,7 +85,7 @@
 
           <router-link to="/anime" class="drawer-link" active-class="active" @click="isMobileMenuOpen = false">
             <span class="drawer-emoji" style="background:#f2efff;">🎌</span>
-            <span class="text">动漫人物</span>
+            <span class="text">动漫图鉴</span>
           </router-link>
 
           <router-link to="/drive" class="drawer-link" active-class="active" @click="isMobileMenuOpen = false">

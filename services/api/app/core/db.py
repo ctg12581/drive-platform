@@ -254,7 +254,7 @@ SCHEMA_STATEMENTS = [
     """,
     "ALTER TABLE hot_news ADD COLUMN IF NOT EXISTS kind VARCHAR(10) DEFAULT 'rank';",
     "ALTER TABLE hot_news ADD COLUMN IF NOT EXISTS image_url TEXT DEFAULT '';",
-    # 动漫人物图鉴：作品表 + 角色表（作品 1 : N 角色），由后台定时爬虫整表刷新
+    # 动漫图鉴：作品表 + 角色表（作品 1 : N 角色），由后台定时爬虫整表刷新
     # 旧版是单表（无 work_id），检测到旧结构则一次性重建，数据由爬虫重新填充
     """
     DO $$

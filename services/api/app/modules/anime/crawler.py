@@ -1,5 +1,5 @@
 # app/modules/anime/crawler.py
-# 动漫人物图鉴定时爬虫：抓取「中 · 美 · 日」三地动画角色，整表刷新到 anime_characters。
+# 动漫图鉴定时爬虫：抓取「中 · 美 · 日」三地动画角色，整表刷新到 anime_characters。
 #
 # 数据源（均为公开、免 Key 接口，只用标准库 urllib，无新增依赖）：
 #   - 日漫 / 国漫：AniList GraphQL（countryOfOrigin = JP / CN，按人气排序，取作品主角）
@@ -550,7 +550,7 @@ async def crawl_loop():
 # 命令行入口：python -m app.modules.anime.crawler [--dry-run] [--out out.json]
 # ---------------------------------------------------------------------------
 def _parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="动漫人物图鉴爬虫（AniList + TVmaze）")
+    parser = argparse.ArgumentParser(description="动漫图鉴爬虫（AniList + TVmaze）")
     parser.add_argument("--dry-run", action="store_true", help="只抓取不写数据库")
     parser.add_argument("--max-per-region", type=int, default=None, help="每地区最多保留角色数")
     parser.add_argument("--out", type=str, default="", help="抓取结果另存为 JSON 文件")
