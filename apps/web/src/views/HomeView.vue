@@ -1,13 +1,10 @@
 <!-- src/views/HomeView.vue · 小红书瀑布流首页 -->
 <template>
   <div class="feed-container">
-    <!-- 顶部频道切换 -->
-    <div class="feed-tabs">
+    <!-- 顶部频道切换（热榜已移至底部导航，此处仅保留推荐/关注） -->
+    <div v-if="currentSubTab !== 'rank'" class="feed-tabs">
       <button @click="changeTab('hot')" :class="['feed-tab-btn', { active: currentSubTab === 'hot' }]">
         <span class="tab-text">推荐</span>
-      </button>
-      <button @click="changeTab('rank')" :class="['feed-tab-btn', { active: currentSubTab === 'rank' }]">
-        <span class="tab-text">热榜</span>
       </button>
       <button @click="changeTab('following')" :class="['feed-tab-btn', { active: currentSubTab === 'following' }]">
         <span class="tab-text">关注</span>
@@ -171,6 +168,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { isUrl } from '@drive/shared'
 import { useAuthStore } from '../store/auth'
 import { useMomentsStore } from '../store/home'
@@ -182,8 +180,13 @@ import { fetchUserProfile } from '../utils/userProfile'
 const authStore = useAuthStore()
 const momentsStore = useMomentsStore()
 const chatStore = useChatStore()
+const route = useRoute()
+const router = useRouter()
 
-const currentSubTab = ref('hot') // 'hot' 推荐, 'rank' 热榜, 'following' 关注
+// 频道可由底部「热榜」入口通过 ?tab=rank 打开
+const queryTab = route.query.tab
+const initialTab = queryTab === 'rank' || queryTab === 'following' ? queryTab : 'hot'
+const currentSubTab = ref(initialTab) // 'hot' 推荐, 'rank' 热榜, 'following' 关注
 const posts = ref(momentsStore.cachedPosts)
 const loading = ref(posts.value.length === 0)
 const activeProfile = ref(null)
@@ -331,7 +334,11 @@ let lastFetchedTime = ''
 let checkInterval = null
 
 onMounted(() => {
-  loadPage('hot', 1)
+  if (initialTab === 'following') {
+    fetchTimeline(1)
+  } else {
+    loadPage(initialTab, 1)
+  }
   window.addEventListener('moments:new', onNewMoments)
   checkInterval = setInterval(checkNewPosts, 60000)
 })
@@ -382,7 +389,7 @@ const goFollowingPage = (page) => {
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
-const changeTab = (tab) => {
+const changeTab = (tab, fromRoute = false) => {
   if (currentSubTab.value === tab) return
   currentSubTab.value = tab
   if (tab === 'following') {
@@ -393,7 +400,21 @@ const changeTab = (tab) => {
   } else if (tab === 'rank' && lists.rank.items.length === 0) {
     loadPage('rank', 1)
   }
+  // 同步到路由 query，保证底部导航高亮（首页 / 热榜）正确
+  if (!fromRoute) {
+    const query = tab === 'hot' ? {} : { tab }
+    router.replace({ path: '/home', query }).catch(() => {})
+  }
 }
+
+// 底部导航切换（如点「热榜」/「首页」）时，路由 query 变化 -> 同步频道
+watch(
+  () => route.query.tab,
+  (t) => {
+    const target = t === 'rank' || t === 'following' ? t : 'hot'
+    if (target !== currentSubTab.value) changeTab(target, true)
+  },
+)
 
 const onNewMoments = (event) => {
   newPostsCount.value += Number(event && event.detail) || 1

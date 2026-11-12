@@ -15,10 +15,15 @@
         <span class="brand-sub">Space</span>
       </div>
 
-      <button class="top-bell" @click="router.push('/notifications')" aria-label="通知">
-        <svg viewBox="0 0 24 24" class="top-svg"><path d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22zm7-6.5V11a7 7 0 0 0-5.5-6.84V3.5a1.5 1.5 0 0 0-3 0v.66A7 7 0 0 0 5 11v4.5l-1.6 1.6a1 1 0 0 0 .7 1.7h15.8a1 1 0 0 0 .7-1.7L19 15.5z"/></svg>
-        <span v-if="chatStore.pendingRequestsCount > 0" class="top-bell-badge">{{ chatStore.pendingRequestsCount }}</span>
-      </button>
+      <div class="top-actions">
+        <button class="top-act" @click="router.push('/search')" aria-label="搜索">
+          <svg viewBox="0 0 24 24" class="top-svg"><path d="M10.5 3a7.5 7.5 0 1 1-4.55 13.46l-3.2 3.2a1 1 0 1 1-1.42-1.42l3.2-3.2A7.5 7.5 0 0 1 10.5 3zm0 2a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11z"/></svg>
+        </button>
+        <button class="top-bell" @click="router.push('/notifications')" aria-label="通知">
+          <svg viewBox="0 0 24 24" class="top-svg"><path d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22zm7-6.5V11a7 7 0 0 0-5.5-6.84V3.5a1.5 1.5 0 0 0-3 0v.66A7 7 0 0 0 5 11v4.5l-1.6 1.6a1 1 0 0 0 .7 1.7h15.8a1 1 0 0 0 .7-1.7L19 15.5z"/></svg>
+          <span v-if="chatStore.pendingRequestsCount > 0" class="top-bell-badge">{{ chatStore.pendingRequestsCount }}</span>
+        </button>
+      </div>
     </header>
 
     <!-- 主内容区 -->
@@ -30,14 +35,14 @@
 
     <!-- 底部固定导航栏（小红书五宫格） -->
     <nav class="mobile-bottom-bar">
-      <router-link to="/home" :class="['bottom-link', { active: route.path === '/home' }]" aria-label="首页">
+      <router-link to="/home" :class="['bottom-link', { active: route.path === '/home' && route.query.tab !== 'rank' }]" aria-label="首页">
         <svg viewBox="0 0 24 24" class="svg-icon"><path d="M11.3 2.6a1 1 0 0 1 1.4 0l8 7.4a1 1 0 0 1 .3.74V20a1.5 1.5 0 0 1-1.5 1.5h-4.4v-6.1h-4.2v6.1H4.5A1.5 1.5 0 0 1 3 20v-9.26a1 1 0 0 1 .3-.74l8-7.4z"/></svg>
         <span class="bottom-label">首页</span>
       </router-link>
 
-      <router-link to="/search" :class="['bottom-link', { active: route.path === '/search' }]" aria-label="搜索">
-        <svg viewBox="0 0 24 24" class="svg-icon"><path d="M10.5 3a7.5 7.5 0 1 1-4.55 13.46l-3.2 3.2a1 1 0 1 1-1.42-1.42l3.2-3.2A7.5 7.5 0 0 1 10.5 3zm0 2a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11z"/></svg>
-        <span class="bottom-label">搜索</span>
+      <router-link :to="{ path: '/home', query: { tab: 'rank' } }" :class="['bottom-link', { active: isRankTab }]" aria-label="热榜">
+        <svg viewBox="0 0 24 24" class="svg-icon"><path d="M13.5.67s.74 2.65.74 4.8c0 2.06-1.35 3.73-3.41 3.73-2.07 0-3.63-1.67-3.63-3.73l.03-.36C5.21 7.51 4 10.62 4 14c0 4.42 3.58 8 8 8s8-3.58 8-8C20 8.61 17.41 3.8 13.5.67zM11.71 19c-1.78 0-3.22-1.4-3.22-3.14 0-1.62 1.05-2.76 2.81-3.12 1.77-.36 3.6-1.21 4.62-2.58.39 1.29.59 2.65.59 4.04 0 2.65-2.15 4.8-4.8 4.8z"/></svg>
+        <span class="bottom-label">热榜</span>
       </router-link>
 
       <button class="bottom-publish" @click="openCompose" aria-label="发布">
@@ -141,7 +146,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { isUrl } from '@drive/shared'
 import { useAuthStore } from './store/auth'
 import { useChatStore } from './store/chat'
@@ -155,6 +160,8 @@ const chatStore = useChatStore()
 const momentsStore = useMomentsStore()
 const router = useRouter()
 const route = useRoute()
+
+const isRankTab = computed(() => route.path === '/home' && route.query.tab === 'rank')
 
 const isMobileMenuOpen = ref(false)
 const showComposeModal = ref(false)
@@ -345,6 +352,12 @@ body {
   color: var(--xhs-text-3);
   letter-spacing: 0.3px;
 }
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.top-act,
 .top-bell {
   position: relative;
   width: 34px;
