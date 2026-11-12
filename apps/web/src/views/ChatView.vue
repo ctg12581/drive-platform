@@ -75,7 +75,7 @@
         </div>
 
         <!-- 对话消息池 -->
-        <div class="chat-body" id="chatFlow">
+        <div class="chat-body" id="chatFlow" @scroll.passive="handleChatScroll">
           <div v-for="(msg, idx) in messages" :key="msg.id || msg.client_id || idx" 
                :class="['message-row', msg.system ? 'sys-row' : (msg.self ? 'self-row' : 'peer-row')]">
             
@@ -186,6 +186,8 @@ const messages = computed(() => chatStore.activeMessages)
 const fileInput = ref(null)
 const activeProfile = ref(null)
 const activeMenuIndex = ref(null)
+// 用户是否处于消息列表底部附近：用于在收到新消息时自动滚动到最新一条
+const chatFlowNearBottom = ref(true)
 
 const selectedContactProfile = computed(() => {
   return friends.value.find(f => f.username === selectedContact.value)
@@ -482,9 +484,29 @@ const scrollToBottom = () => {
     const flow = document.getElementById('chatFlow')
     if (flow) {
       flow.scrollTop = flow.scrollHeight
+      chatFlowNearBottom.value = true
     }
   })
 }
+
+// 记录滚动位置：只有用户停在底部附近时才视为“跟随最新消息”，
+// 避免用户向上翻阅历史时被新消息强行拉回底部。
+const handleChatScroll = () => {
+  const flow = document.getElementById('chatFlow')
+  if (!flow) return
+  chatFlowNearBottom.value = flow.scrollHeight - flow.clientHeight - flow.scrollTop <= 120
+}
+
+// 收到/发送新消息后，消息数量增加时自动滚动到最新一条，
+// 修复“对方发消息后聊天页不展示最新消息”的问题。
+watch(
+  () => messages.value.length,
+  (newLen, oldLen) => {
+    if (newLen > oldLen && chatFlowNearBottom.value) {
+      scrollToBottom()
+    }
+  },
+)
 
 const getCurrentTimeLabel = () => {
   const now = new Date()
