@@ -83,10 +83,9 @@
 
       <div v-else class="xhs-empty">暂无数据，抓取源可能暂不可达，正在自动重试…</div>
 
-      <div v-if="activeList.total > NEWS_PAGE_SIZE" class="pager">
-        <button class="pager-btn" :disabled="activeList.page <= 1" @click="goPage(currentSubTab, activeList.page - 1)">上一页</button>
-        <span class="pager-info">{{ activeList.page }} / {{ totalPages(currentSubTab) }}</span>
-        <button class="pager-btn" :disabled="!activeList.hasMore" @click="goPage(currentSubTab, activeList.page + 1)">下一页</button>
+      <div class="load-more-tip">
+        <span v-if="activeList.loading && activeList.items.length">正在加载更多…</span>
+        <span v-else-if="activeList.items.length && !activeList.hasMore">已经到底啦 ~</span>
       </div>
       <div class="feed-hint">内容来自各站点公开热榜 · 点击跳转原文</div>
     </section>
@@ -140,10 +139,9 @@
         </div>
       </template>
 
-      <div v-if="followingTotal > FOLLOWING_PAGE_SIZE" class="pager">
-        <button class="pager-btn" :disabled="followingPage <= 1" @click="goFollowingPage(followingPage - 1)">上一页</button>
-        <span class="pager-info">{{ followingPage }} / {{ followingTotalPages() }}</span>
-        <button class="pager-btn" :disabled="!followingHasMore" @click="goFollowingPage(followingPage + 1)">下一页</button>
+      <div v-if="posts.length" class="load-more-tip">
+        <span v-if="loading">正在加载更多…</span>
+        <span v-else-if="!followingHasMore">已经到底啦 ~</span>
       </div>
     </section>
 
@@ -320,7 +318,7 @@ const formatHot = (value) => {
 
 const totalPages = (tab) => Math.max(1, Math.ceil((lists[(TAB_META[tab] || TAB_META.cn).key].total || 0) / NEWS_PAGE_SIZE))
 
-const loadPage = async (tab, page = 1) => {
+const loadPage = async (tab, page = 1, append = false) => {
   const meta = TAB_META[tab]
   if (!meta) return
   const st = lists[meta.key]
@@ -331,7 +329,8 @@ const loadPage = async (tab, page = 1) => {
     const res = await apiFetch(url)
     const data = await res.json()
     if (res.ok && data.success) {
-      st.items = data.news || []
+      const incoming = data.news || []
+      st.items = append ? st.items.concat(incoming) : incoming
       st.total = data.total || 0
       st.page = data.page || target
       st.hasMore = !!data.has_more
@@ -342,7 +341,7 @@ const loadPage = async (tab, page = 1) => {
   } finally {
     st.loading = false
   }
-  window.scrollTo({ top: 0, behavior: 'smooth' })
+  if (!append) window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
 const goPage = (tab, page) => {
@@ -362,6 +361,23 @@ const newPostsCount = ref(0)
 let lastFetchedTime = ''
 let checkInterval = null
 
+// 下滑到底部自动加载下一页（无限滚动，替代点击分页）
+const onScroll = () => {
+  if (typeof window === 'undefined') return
+  const nearBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 400
+  if (!nearBottom) return
+  if (currentSubTab.value === 'following') {
+    if (loading.value || !followingHasMore.value) return
+    fetchTimeline(followingPage.value + 1, false, true)
+    return
+  }
+  const meta = TAB_META[currentSubTab.value]
+  if (!meta) return
+  const st = lists[meta.key]
+  if (st.loading || !st.hasMore || st.items.length === 0) return
+  loadPage(currentSubTab.value, st.page + 1, true)
+}
+
 onMounted(() => {
   if (initialTab === 'following') {
     fetchTimeline(1)
@@ -369,17 +385,19 @@ onMounted(() => {
     loadPage(initialTab, 1)
   }
   window.addEventListener('moments:new', onNewMoments)
+  window.addEventListener('scroll', onScroll, { passive: true })
   checkInterval = setInterval(checkNewPosts, 60000)
 })
 
 onUnmounted(() => {
   if (checkInterval) clearInterval(checkInterval)
   window.removeEventListener('moments:new', onNewMoments)
+  window.removeEventListener('scroll', onScroll)
 })
 
 watch(() => momentsStore.refreshTick, () => fetchTimeline(1, true))
 
-const fetchTimeline = async (page = 1, silent = false) => {
+const fetchTimeline = async (page = 1, silent = false, append = false) => {
   const target = Math.max(1, page)
   if (!silent) loading.value = true
   try {
@@ -387,15 +405,16 @@ const fetchTimeline = async (page = 1, silent = false) => {
     const res = await apiFetch(`/moments/following?limit=${FOLLOWING_PAGE_SIZE}&offset=${offset}`)
     const data = await res.json()
     if (res.ok) {
-      posts.value = data.moments || []
+      const incoming = data.moments || []
+      posts.value = append ? posts.value.concat(incoming) : incoming
       followingPage.value = target
       followingTotal.value = data.total || 0
       followingHasMore.value = !!data.has_more
 
       if (target === 1) {
-        if ((data.moments || []).length > 0) {
-          lastFetchedTime = data.moments[0].time
-          momentsStore.setPosts(data.moments)
+        if (incoming.length > 0) {
+          lastFetchedTime = incoming[0].time
+          momentsStore.setPosts(incoming)
         } else {
           lastFetchedTime = new Date().toISOString()
         }
@@ -857,6 +876,13 @@ const openUserProfile = async (targetUsername) => {
   font-weight: 600;
   min-width: 52px;
   text-align: center;
+}
+.load-more-tip {
+  text-align: center;
+  font-size: 0.76rem;
+  color: var(--xhs-text-3);
+  padding: 14px 0 6px;
+  min-height: 18px;
 }
 .feed-hint {
   margin-top: 8px;
