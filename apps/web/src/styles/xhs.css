@@ -1,0 +1,182 @@
+/* ============================================================
+   小红书风格 全局设计系统 (Xiaohongshu / RED design tokens)
+   在 main.js 中全局引入，所有页面共享。
+   ============================================================ */
+:root {
+  /* 品牌红 */
+  --xhs-red: #ff2442;
+  --xhs-red-2: #ff5a6e;
+  --xhs-red-soft: #fff1f3;
+  --xhs-red-line: #ffd6dc;
+
+  /* 中性色 */
+  --xhs-bg: #f6f6f7;
+  --xhs-card: #ffffff;
+  --xhs-text: #1c1c1e;
+  --xhs-text-2: #7a7a80;
+  --xhs-text-3: #a9a9ae;
+  --xhs-line: #f0f0f2;
+
+  /* 圆角 / 阴影 */
+  --xhs-radius: 12px;
+  --xhs-radius-lg: 18px;
+  --xhs-radius-pill: 999px;
+  --xhs-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  --xhs-shadow-hover: 0 10px 26px rgba(0, 0, 0, 0.1);
+
+  /* 布局高度 */
+  --app-top: 56px;
+  --app-bottom: 58px;
+
+  /* ---- 旧变量别名，保证历史 scoped 样式继续可用且自动变红 ---- */
+  --x-blue: var(--xhs-red);
+  --x-bg-hover: rgba(0, 0, 0, 0.04);
+  --x-border: var(--xhs-line);
+  --x-text-main: var(--xhs-text);
+  --x-text-gray: var(--xhs-text-2);
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--xhs-bg);
+  color: var(--xhs-text);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+img {
+  -webkit-user-drag: none;
+}
+
+/* 滚动条：更细腻 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.14);
+  border-radius: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ------------------ 通用可复用类 ------------------ */
+.xhs-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 20px;
+  border: none;
+  border-radius: var(--xhs-radius-pill);
+  background: var(--xhs-red);
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.18s, transform 0.1s, box-shadow 0.18s;
+  box-shadow: 0 4px 12px rgba(255, 36, 66, 0.24);
+}
+.xhs-btn-primary:hover {
+  background: #ef1b38;
+}
+.xhs-btn-primary:active {
+  transform: scale(0.97);
+}
+.xhs-btn-primary:disabled {
+  background: #ffc2cb;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.xhs-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 38px;
+  padding: 0 20px;
+  border: 1px solid var(--xhs-line);
+  border-radius: var(--xhs-radius-pill);
+  background: #fff;
+  color: var(--xhs-text);
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.18s, border-color 0.18s;
+}
+.xhs-btn-ghost:hover {
+  background: #fafafa;
+  border-color: #e4e4e7;
+}
+
+.xhs-card {
+  background: var(--xhs-card);
+  border-radius: var(--xhs-radius-lg);
+  box-shadow: var(--xhs-shadow);
+}
+
+.xhs-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: var(--xhs-radius-pill);
+  background: var(--xhs-red-soft);
+  color: var(--xhs-red);
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+.xhs-empty {
+  text-align: center;
+  color: var(--xhs-text-2);
+  font-size: 0.92rem;
+  line-height: 1.7;
+  padding: 64px 28px;
+}
+
+/* 通用弹窗 */
+.xhs-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+.xhs-modal-card {
+  width: 100%;
+  max-width: 430px;
+  background: #fff;
+  border-radius: 22px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+  position: relative;
+}
+
+@keyframes xhs-pulse {
+  0% { opacity: 0.55; }
+  50% { opacity: 1; }
+  100% { opacity: 0.55; }
+}
+@keyframes xhs-fade-up {
+  0% { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}

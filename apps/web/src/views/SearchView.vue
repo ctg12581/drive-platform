@@ -1,67 +1,69 @@
-<!-- src/views/SearchView.vue -->
+<!-- src/views/SearchView.vue · 小红书风格搜索 -->
 <template>
   <div class="search-container">
-    <!-- 𝕏 经典版：顶固高档极简搜索栏 (带 Focus 动态变色) -->
     <div class="search-header">
       <div class="search-input-pill">
-        <svg viewBox="0 0 24 24" class="search-icon-svg"><path d="M21.53 20.47l-3.66-3.66C19.195 15.24 20 13.214 20 11c0-4.97-4.03-9-9-9s-9 4.03-9 9 4.03 9 9 9c2.215 0 4.24-.804 5.808-2.13l3.66 3.66c.147.146.34.22.53.22s.385-.073.53-.22c.295-.293.295-.767.002-1.06zM3.5 11c0-4.135 3.365-7.5 7.5-7.5s7.5 3.365 7.5 7.5-3.365 7.5-7.5 7.5-7.5-3.365-7.5-7.5z"/></svg>
-        <input type="text" v-model="searchQuery" class="search-input-field" placeholder="搜索用户 @账号 或 个性昵称..." @input="handleSearch">
+        <svg viewBox="0 0 24 24" class="search-icon-svg"><path d="M10.5 3a7.5 7.5 0 1 1-4.55 13.46l-3.2 3.2a1 1 0 1 1-1.42-1.42l3.2-3.2A7.5 7.5 0 0 1 10.5 3zm0 2a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11z"/></svg>
+        <input type="text" v-model="searchQuery" class="search-input-field" placeholder="搜索用户 @账号 或 个性昵称…" @input="handleSearch">
+        <button v-if="searchQuery" class="search-clear" @click="clearQuery">✕</button>
       </div>
     </div>
 
-    <!-- 搜索结果列表 -->
     <div class="search-results">
-      <div v-if="users.length === 0" class="no-results">
-        <div style="font-size: 2.5rem; margin-bottom: 12px;">🔍</div>
+      <div v-if="users.length === 0" class="xhs-empty">
+        <div class="empty-emoji">🔍</div>
         <p v-if="searchQuery">没有找到与 “{{ searchQuery }}” 匹配的用户</p>
-        <p v-else>输入关键字，在 𝕏 维度空间中寻找新朋友并互粉吧！</p>
+        <p v-else>输入关键字，发现更多志趣相投的朋友</p>
       </div>
-      
-      <div v-else v-for="user in users" :key="user.username" class="user-card" @click="openUserProfile(user.username)">
-        <div class="user-card-left">
-          <!-- 💡 核心修复：支持 Emoji 和 图片 URL 头像的自适应完美渲染 -->
-          <div class="user-avatar-small">
-            <img v-if="isUrl(user.avatar)" :src="user.avatar" class="avatar-img" />
-            <span v-else-if="user.avatar && user.avatar !== '👤'">{{ user.avatar }}</span>
-            <span v-else>{{ user.username[0].toUpperCase() }}</span>
+
+      <div v-else class="result-list">
+        <div v-for="user in users" :key="user.username" class="user-card" @click="openUserProfile(user.username)">
+          <div class="user-card-left">
+            <div class="user-avatar-small">
+              <img v-if="isUrl(user.avatar)" :src="user.avatar" class="avatar-img" />
+              <span v-else-if="user.avatar && user.avatar !== '👤'">{{ user.avatar }}</span>
+              <span v-else>{{ user.username[0].toUpperCase() }}</span>
+            </div>
+            <div class="user-info">
+              <div class="user-nickname">{{ user.nickname }}</div>
+              <div class="user-username">@{{ user.username }}</div>
+            </div>
           </div>
-          <div class="user-info">
-            <div class="user-nickname">{{ user.nickname }}</div>
-            <div class="user-username">@{{ user.username }}</div>
+
+          <div class="user-card-right" @click.stop>
+            <button v-if="user.friend_status === 'none'" @click="sendFriendRequest(user.username)" class="btn-follow-pill">
+              关注
+            </button>
+            <span v-else-if="user.friend_status === 'sent'" class="badge-status badge-sent">已申请</span>
+            <span v-else-if="user.friend_status === 'received'" class="badge-status badge-received" @click="goToNotifications">待同意</span>
+            <span v-else-if="user.friend_status === 'friends'" class="badge-status badge-friends">已互关</span>
           </div>
-        </div>
-        
-        <!-- 关系按钮 (阻止冒泡，点击不触发打开主页) -->
-        <div class="user-card-right" @click.stop>
-          <button v-if="user.friend_status === 'none'" @click="sendFriendRequest(user.username)" class="btn-follow-pill">
-            关注 / 加好友
-          </button>
-          <span v-else-if="user.friend_status === 'sent'" class="badge-status badge-sent">已申请</span>
-          <span v-else-if="user.friend_status === 'received'" class="badge-status badge-received" @click="goToNotifications">待同意</span>
-          <span v-else-if="user.friend_status === 'friends'" class="badge-status badge-friends">已互关</span>
         </div>
       </div>
     </div>
 
-    <!-- 个人主页弹窗 (Profile) -->
+    <!-- 个人主页弹窗 -->
     <div v-if="activeProfile" class="modal-backdrop" @click.self="activeProfile = null">
-      <div class="modal-card">
+      <div class="modal-card profile-modal">
         <button class="modal-close" @click="activeProfile = null">✕</button>
-        <div class="modal-header">
+        <div class="profile-cover"></div>
+        <div class="profile-modal-head">
           <div class="modal-avatar-big">
             <img v-if="isUrl(activeProfile.user.avatar)" :src="activeProfile.user.avatar" class="avatar-img" />
             <span v-else-if="activeProfile.user.avatar && activeProfile.user.avatar !== '👤'">{{ activeProfile.user.avatar }}</span>
             <span v-else>{{ activeProfile.user.username[0].toUpperCase() }}</span>
           </div>
-          <h2 class="modal-nickname">{{ activeProfile.user.nickname }}</h2>
-          <p class="modal-handle">@{{ activeProfile.user.username }}</p>
+          <div class="profile-modal-meta">
+            <h2 class="modal-nickname">{{ activeProfile.user.nickname }}</h2>
+            <p class="modal-handle">@{{ activeProfile.user.username }}</p>
+          </div>
         </div>
         <div class="modal-body">
-          <h3 class="modal-tab-title">TA 的动态 ({{ activeProfile.posts.length }})</h3>
-          <div v-if="activeProfile.posts.length === 0" class="no-posts-hint">TA 还没有发布过任何动态。</div>
-          <div v-for="p in activeProfile.posts" :key="p.id" class="modal-tweet">
-            <div class="modal-tweet-time">{{ formatLocalTime(p.time) }}</div>
-            <div class="modal-tweet-content">{{ p.content }}</div>
+          <h3 class="modal-tab-title">TA 的笔记 ({{ activeProfile.posts.length }})</h3>
+          <div v-if="activeProfile.posts.length === 0" class="xhs-empty" style="padding:28px 0;">TA 还没有发布过任何笔记。</div>
+          <div v-for="p in activeProfile.posts" :key="p.id" class="modal-note">
+            <div class="modal-note-time">{{ formatLocalTime(p.time) }}</div>
+            <div class="modal-note-content">{{ p.content }}</div>
           </div>
         </div>
       </div>
@@ -85,7 +87,6 @@ const activeProfile = ref(null)
 
 let debounceTimer = null
 
-// 模糊搜索
 const handleSearch = () => {
   if (debounceTimer) clearTimeout(debounceTimer)
   if (!searchQuery.value.trim()) {
@@ -105,7 +106,11 @@ const handleSearch = () => {
   }, 350)
 }
 
-// 提交好友申请
+const clearQuery = () => {
+  searchQuery.value = ''
+  users.value = []
+}
+
 const sendFriendRequest = async (targetUsername) => {
   try {
     const res = await apiFetch('/chat/add-friend', {
@@ -115,7 +120,6 @@ const sendFriendRequest = async (targetUsername) => {
     const data = await res.json()
     if (res.ok) {
       alert(data.message || '请求已发送')
-      // 实时修改本地列表状态，提供零延迟高交互反馈
       const user = users.value.find(u => u.username === targetUsername)
       if (user) {
         user.friend_status = 'sent'
@@ -128,12 +132,10 @@ const sendFriendRequest = async (targetUsername) => {
   }
 }
 
-// 跳转至通知中心同意对方的请求
 const goToNotifications = () => {
   router.push('/notifications')
 }
 
-// 点击卡片直接打开该用户的个人主页弹窗
 const openUserProfile = async (targetUsername) => {
   try {
     activeProfile.value = await fetchUserProfile(targetUsername)
@@ -146,94 +148,100 @@ const openUserProfile = async (targetUsername) => {
 <style scoped>
 .search-container {
   width: 100%;
+  background: #fff;
+  min-height: calc(100vh - var(--app-top) - var(--app-bottom));
 }
 
-/* 𝕏 经典扁平化、吸顶搜索栏 */
+/* 吸顶搜索栏 */
 .search-header {
   position: sticky;
-  top: 0;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--x-border);
+  top: var(--app-top);
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(14px);
   padding: 12px 16px;
-  z-index: 10;
+  z-index: 20;
 }
-
 .search-input-pill {
   display: flex;
   align-items: center;
-  gap: 12px;
-  background: #eff3f4; /* 𝕏 经典浅灰色背景 */
-  border: 1px solid transparent;
-  border-radius: 9999px;
+  gap: 10px;
+  background: #f4f4f6;
+  border: 1.5px solid transparent;
+  border-radius: var(--xhs-radius-pill);
   padding: 8px 16px;
-  transition: all 0.15s;
+  transition: all 0.16s;
 }
-/* 当输入框获得焦点时，药丸容器背景变纯白，边框和图标变 𝕏 蓝 */
 .search-input-pill:focus-within {
-  background: #ffffff;
-  border-color: var(--x-blue);
-  box-shadow: 0 0 0 1px var(--x-blue);
+  background: #fff;
+  border-color: var(--xhs-red);
+  box-shadow: 0 0 0 3px rgba(255, 36, 66, 0.1);
 }
-
 .search-icon-svg {
   width: 18px;
   height: 18px;
-  fill: var(--x-text-gray);
-  transition: fill 0.15s;
+  fill: var(--xhs-text-3);
+  flex-shrink: 0;
 }
 .search-input-pill:focus-within .search-icon-svg {
-  fill: var(--x-blue);
+  fill: var(--xhs-red);
 }
-
 .search-input-field {
   flex: 1;
   border: none;
   background: transparent;
   outline: none;
-  font-size: 0.95rem;
-  color: var(--x-text-main);
+  font-size: 0.92rem;
+  color: var(--xhs-text);
+}
+.search-input-field::placeholder {
+  color: var(--xhs-text-3);
+}
+.search-clear {
+  border: none;
+  background: #dcdce0;
+  color: #fff;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  font-size: 0.6rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
-/* 搜索列表排版 */
-.search-results {
-  padding: 0;
-}
-.no-results {
-  text-align: center;
-  color: var(--x-text-gray);
-  font-size: 0.95rem;
-  padding: 60px 40px;
-  line-height: 1.6;
+.empty-emoji {
+  font-size: 2.6rem;
+  margin-bottom: 12px;
 }
 
-/* 𝕏.com 经典“推荐关注/用户推荐”卡片排版 */
+.result-list {
+  padding: 4px 0;
+}
+
+/* 用户卡片 */
 .user-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--x-border);
   cursor: pointer;
   transition: background 0.15s;
 }
 .user-card:hover {
-  background: var(--x-bg-hover);
+  background: #fafafa;
 }
-
 .user-card-left {
   display: flex;
   align-items: center;
   gap: 12px;
   overflow: hidden;
 }
-
-/* 💡 自适应头像容器，支持 Emoji 和 图片 URL 的统一性，极简融合 */
 .user-avatar-small {
-  width: 40px;
-  height: 40px;
-  background: #ffffff;
-  border: 1px solid var(--x-border);
+  width: 46px;
+  height: 46px;
+  background: #f4f4f6;
   border-radius: 50%;
   font-size: 1.5rem;
   display: flex;
@@ -247,7 +255,6 @@ const openUserProfile = async (targetUsername) => {
   height: 100%;
   object-fit: cover;
 }
-
 .user-info {
   display: flex;
   flex-direction: column;
@@ -255,90 +262,157 @@ const openUserProfile = async (targetUsername) => {
   overflow: hidden;
 }
 .user-nickname {
-  font-weight: bold;
+  font-weight: 700;
   font-size: 0.95rem;
-  color: var(--x-text-main);
+  color: var(--xhs-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .user-username {
-  font-size: 0.85rem;
-  color: var(--x-text-gray);
+  font-size: 0.82rem;
+  color: var(--xhs-text-3);
+  margin-top: 2px;
 }
 
-/* 𝕏 经典深色丸子关注按钮 */
 .btn-follow-pill {
-  background: #0f1419;
-  color: #ffffff;
+  background: var(--xhs-red);
+  color: #fff;
   border: none;
-  font-weight: bold;
-  font-size: 0.85rem;
-  padding: 0 16px;
+  font-weight: 700;
+  font-size: 0.82rem;
+  padding: 0 20px;
   height: 32px;
-  border-radius: 9999px;
+  border-radius: var(--xhs-radius-pill);
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background 0.18s;
   white-space: nowrap;
+  box-shadow: 0 3px 10px rgba(255, 36, 66, 0.22);
 }
 .btn-follow-pill:hover {
-  background: #272c30;
+  background: #ef1b38;
 }
 
-/* 💡 升级：精美的丸子状态色块徽章（Pill Badges） */
 .badge-status {
-  font-size: 0.85rem;
-  font-weight: bold;
-  padding: 6px 12px;
-  border-radius: 9999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 6px 14px;
+  border-radius: var(--xhs-radius-pill);
   white-space: nowrap;
 }
 .badge-sent {
-  background: #f7f9fa;
-  color: var(--x-text-gray);
-  border: 1px solid var(--x-border);
+  background: #f4f4f6;
+  color: var(--xhs-text-3);
 }
 .badge-received {
-  background: #fee2e2;
-  color: #ef4444;
+  background: var(--xhs-red-soft);
+  color: var(--xhs-red);
   cursor: pointer;
-  border: 1px solid #fca5a5;
-  transition: background 0.2s;
-}
-.badge-received:hover {
-  background: #fca5a5;
-  color: white;
+  border: 1px solid var(--xhs-red-line);
 }
 .badge-friends {
-  background: #d1fae5;
-  color: #065f46;
-  border: 1px solid #a7f3d0;
+  background: #eef9f1;
+  color: #1f9d55;
 }
 
-/* 个人主页弹窗 (Profile) */
+/* 弹窗 */
 .modal-backdrop {
-  position: fixed; top: 0; bottom: 0; left: 0; right: 0;
-  background: rgba(0, 0, 0, 0.4); display: flex; align-items: center; justify-content: center; z-index: 1000;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
 }
 .modal-card {
-  width: 90%; max-width: 450px; background: white; border-radius: 20px;
-  max-height: 80vh; display: flex; flex-direction: column; overflow: hidden; position: relative;
-  box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+  width: 100%;
+  max-width: 420px;
+  background: #fff;
+  border-radius: 22px;
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.24);
+}
+.profile-cover {
+  height: 92px;
+  background: linear-gradient(135deg, #ffd9e1, #ffeef2 60%, #fff);
 }
 .modal-close {
-  position: absolute; top: 16px; right: 16px; background: transparent; border: none; font-size: 1.25rem; font-weight: bold; cursor: pointer; color: var(--x-text-gray);
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.28);
+  color: #fff;
+  border: none;
+  font-size: 0.8rem;
+  cursor: pointer;
 }
-.modal-header { padding: 30px 24px 16px 24px; text-align: center; border-bottom: 1px solid var(--x-border); }
+.profile-modal-head {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  padding: 0 22px 16px;
+  margin-top: -30px;
+}
 .modal-avatar-big {
-  width: 70px; height: 70px; background: #ffffff; border: 1px solid var(--x-border); border-radius: 50%; font-size: 2.5rem; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px auto; overflow: hidden;
+  width: 68px;
+  height: 68px;
+  background: #fff;
+  border-radius: 50%;
+  font-size: 2.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 3px #fff, 0 4px 14px rgba(0, 0, 0, 0.12);
 }
-.modal-nickname { margin: 0; font-size: 1.25rem; font-weight: 800; }
-.modal-handle { margin: 4px 0 0 0; color: var(--x-text-gray); font-size: 0.9rem; }
-
-.modal-body { flex: 1; overflow-y: auto; padding: 16px 24px; }
-.modal-tab-title { font-size: 1rem; font-weight: 800; border-bottom: 2px solid var(--x-blue); padding-bottom: 6px; margin: 0 0 12px 0; display: inline-block;}
-.no-posts-hint { text-align: center; color: var(--x-text-gray); font-size: 0.9rem; padding: 24px 0; }
-.modal-tweet { padding: 12px 0; border-bottom: 1px solid var(--x-border); text-align: left; }
-.modal-tweet-time { font-size: 0.8rem; color: var(--x-text-gray); margin-bottom: 4px; }
-.modal-tweet-content { font-size: 0.95rem; line-height: 1.4; word-wrap: break-word;}
+.profile-modal-meta {
+  padding-bottom: 4px;
+}
+.modal-nickname {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+.modal-handle {
+  margin: 3px 0 0;
+  color: var(--xhs-text-3);
+  font-size: 0.82rem;
+}
+.modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 22px 22px;
+}
+.modal-tab-title {
+  font-size: 0.92rem;
+  font-weight: 800;
+  margin: 6px 0 12px;
+}
+.modal-note {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--xhs-line);
+  text-align: left;
+}
+.modal-note-time {
+  font-size: 0.72rem;
+  color: var(--xhs-text-3);
+  margin-bottom: 5px;
+}
+.modal-note-content {
+  font-size: 0.92rem;
+  line-height: 1.55;
+  word-wrap: break-word;
+}
 </style>

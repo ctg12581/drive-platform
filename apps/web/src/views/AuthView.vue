@@ -1,123 +1,121 @@
-<!-- src/views/AuthView.vue (除了 <style scoped> 外的完整无缺版代码) -->
+<!-- src/views/AuthView.vue · 小红书风格登录 / 个人主页 -->
 <template>
   <div class="auth-wrapper">
-    <!-- 未登录状态：展示极简 𝕏 登录/注册表单 -->
+    <!-- 未登录：登录 / 注册 -->
     <div v-if="!authStore.isLoggedIn" class="auth-card">
       <div class="brand-logo-large">
         <svg viewBox="0 0 100 100" class="drive-logo-svg">
           <defs>
             <linearGradient id="drive-grad-simple" x1="0" y1="0" x2="100" y2="100" gradientUnits="userSpaceOnUse">
-              <stop stop-color="#1d9bf0"/>
-              <stop offset="1" stop-color="#4f46e5"/>
+              <stop stop-color="#ff2442"/>
+              <stop offset="1" stop-color="#ff7a90"/>
             </linearGradient>
           </defs>
-          <path d="M 25,15 H 50 C 70,15 85,30 85,50 C 85,70 70,85 50,85 H 25 Z" 
+          <path d="M 25,15 H 50 C 70,15 85,30 85,50 C 85,70 70,85 50,85 H 25 Z"
                 stroke="url(#drive-grad-simple)" stroke-width="10" stroke-linejoin="round" stroke-linecap="round" fill="none"/>
           <path d="M 42,34 L 66,50 L 42,66 Z" fill="url(#drive-grad-simple)" />
         </svg>
       </div>
 
-      <div class="form-container">
-        <h2 class="auth-title">{{ authMode === 'login' ? '登录您的 DRIVE Space' : '立即注册 DRIVE Space' }}</h2>
-        <form @submit.prevent="handleSubmit">
-          <div class="x-input-group">
-            <input type="text" v-model="form.username" required placeholder="用户名 (@username)">
-          </div>
-          <div class="x-input-group">
-            <input type="password" v-model="form.password" required placeholder="输入密码">
-          </div>
-          <button type="submit" class="x-btn-dark">
-            {{ authMode === 'login' ? '登录' : '创建账户' }}
-          </button>
-        </form>
-        <p class="toggle-text">
-          <span v-if="authMode === 'login'">还没有账号？ <a @click.prevent="authMode = 'register'">立即创建账户</a></span>
-          <span v-else>已有账号？ <a @click.prevent="authMode = 'login'">前往登录</a></span>
-        </p>
-      </div>
+      <h2 class="auth-title">{{ authMode === 'login' ? '登录 DRIVE Space' : '注册 DRIVE Space' }}</h2>
+      <p class="auth-sub">记录生活 · 分享灵感 · 遇见同好</p>
+
+      <form class="form-container" @submit.prevent="handleSubmit">
+        <div class="x-input-group">
+          <input type="text" v-model="form.username" required placeholder="用户名 (@username)">
+        </div>
+        <div class="x-input-group">
+          <input type="password" v-model="form.password" required placeholder="输入密码">
+        </div>
+        <button type="submit" class="xhs-btn-primary auth-submit">
+          {{ authMode === 'login' ? '登录' : '创建账户' }}
+        </button>
+      </form>
+      <p class="toggle-text">
+        <span v-if="authMode === 'login'">还没有账号？<a @click.prevent="authMode = 'register'">立即注册</a></span>
+        <span v-else>已有账号？<a @click.prevent="authMode = 'login'">前往登录</a></span>
+      </p>
     </div>
 
-    <!-- 已登录状态：自适应升级为 𝕏 经典个人主页 (Profile Page) -->
+    <!-- 已登录：个人主页 -->
     <div v-else class="profile-page-container">
-      
-      <!-- 主页头部名片卡 -->
-      <div class="profile-hero-card">
+      <!-- 顶部封面 -->
+      <div class="profile-banner">
         <div class="profile-avatar-big">
           <img v-if="isUrl(authStore.avatar)" :src="authStore.avatar" class="avatar-img-el" />
           <span v-else>{{ authStore.avatar }}</span>
         </div>
-        <div class="profile-meta-info">
+      </div>
+
+      <div class="profile-meta">
+        <div class="profile-name-row">
           <h2 class="profile-nickname">{{ authStore.nickname || authStore.username }}</h2>
-          <p class="profile-handle">@{{ authStore.username }}</p>
           <div class="profile-actions-row">
-            <!-- 弹出修改名片表单 -->
-            <button @click="showEditModal = true" class="x-btn-pill-light">编辑个人资料</button>
-            <button @click="handleLogout" class="x-btn-danger-pill">退出登录</button>
+            <button @click="showEditModal = true" class="btn-edit">编辑资料</button>
+            <button @click="handleLogout" class="btn-logout">退出</button>
           </div>
-          
- 
+        </div>
+        <p class="profile-handle">@{{ authStore.username }}</p>
+        <div class="profile-stats">
+          <div class="stat"><b>{{ myPosts.length }}</b><span>笔记</span></div>
+          <div class="stat"><b>—</b><span>关注</span></div>
+          <div class="stat"><b>—</b><span>粉丝</span></div>
         </div>
       </div>
 
-      <!-- 我的历史动态流 (支持 SWR 0ms 瞬间还原) -->
-      <div class="my-timeline">
-        <h3 class="timeline-title">我的动态 ({{ myPosts.length }})</h3>
-        
-        <!-- 骨架屏占位 -->
-        <div v-if="loading" class="skeleton-container" style="padding-top: 10px;">
-          <div class="skeleton-card" v-for="i in 2" :key="i">
-            <div class="skeleton-avatar"></div>
-            <div class="skeleton-info">
-              <div class="skeleton-line short"></div>
-              <div class="skeleton-line long"></div>
-            </div>
+      <!-- 我的笔记 -->
+      <div class="my-notes-section">
+        <h3 class="section-head">TA 的笔记</h3>
+
+        <div v-if="loading" class="notes-grid">
+          <div v-for="i in 2" :key="i" class="note-skeleton">
+            <div class="note-skeleton-cover"></div>
+            <div class="note-skeleton-line"></div>
           </div>
         </div>
 
-        <div v-else class="my-posts-list">
-          <div v-if="myPosts.length === 0" class="no-posts-hint">
-            您还没有发表过任何动态，去主页发一条新鲜事吧！
+        <div v-else>
+          <div v-if="myPosts.length === 0" class="xhs-empty" style="padding:44px 20px;">
+            你还没有发布过笔记<br />去首页记录这一刻吧 ✨
           </div>
-          <div v-for="post in myPosts" :key="post.id" class="my-tweet-card">
-            <div class="my-tweet-avatar">
-              <img v-if="isUrl(authStore.avatar)" :src="authStore.avatar" class="avatar-img-el" />
-              <span v-else>{{ authStore.avatar }}</span>
-            </div>
-            <div class="my-tweet-main">
-              <div class="my-tweet-header">
-                <span class="my-tweet-author">{{ authStore.nickname }}</span>
-                <span class="my-tweet-handle">@{{ authStore.username }} · {{ formatLocalTime(post.time) }}</span>
+          <div v-else class="notes-grid">
+            <article v-for="(post, idx) in myPosts" :key="post.id" class="note-card">
+              <div class="note-cover" :style="noteCoverStyle(post, idx)">
+                <span class="cover-emoji">{{ noteEmoji(post, idx) }}</span>
               </div>
-              <div class="my-tweet-content">{{ post.content }}</div>
-            </div>
+              <div class="note-body">
+                <h4 class="note-title">{{ post.content }}</h4>
+                <div class="note-foot">
+                  <span class="note-time">{{ formatLocalTime(post.time) }}</span>
+                  <span class="note-like">♡ {{ noteLikes(post, idx) }}</span>
+                </div>
+              </div>
+            </article>
           </div>
         </div>
       </div>
 
-      <!-- 💡 1. 弹出模态：编辑个人名片弹窗 -->
+      <!-- 编辑资料弹窗 -->
       <div v-if="showEditModal" class="modal-backdrop" @click.self="showEditModal = false">
-        <div class="modal-card" style="max-width: 400px; padding: 24px; text-align: left;">
+        <div class="modal-card edit-modal">
           <button class="modal-close" @click="showEditModal = false">✕</button>
-          <h3 style="margin-top: 0; font-size: 1.2rem; font-weight: 800; text-align: center; margin-bottom: 20px;">编辑个人资料</h3>
+          <h3 class="edit-title">编辑个人资料</h3>
           <form @submit.prevent="updateProfile">
-            <div class="x-input-group-edit">
-              <label class="edit-label">我的昵称</label>
-              <input type="text" v-model="profileForm.nickname" placeholder="设置个性昵称" required class="x-input-field">
+            <div class="edit-group">
+              <label class="edit-label">昵称</label>
+              <input type="text" v-model="profileForm.nickname" placeholder="设置个性昵称" required class="edit-input">
             </div>
-            <div class="x-input-group-edit">
-              <label class="edit-label">我的头像 (Emoji 或图片链接)</label>
-              <input type="text" v-model="profileForm.avatar_url" placeholder="自定义头像..." required class="x-input-field">
+            <div class="edit-group">
+              <label class="edit-label">头像（Emoji 或图片链接）</label>
+              <input type="text" v-model="profileForm.avatar_url" placeholder="自定义头像…" required class="edit-input">
             </div>
-            <!-- 快捷推荐 Emoji -->
             <div class="emoji-picker">
-              <span v-for="emoji in ['🚀','🐱','🦊','🎮','🦄','🐧','🌸','🐼']" :key="emoji" 
+              <span v-for="emoji in ['🚀','🐱','🦊','🎮','🦄','🐧','🌸','🐼']" :key="emoji"
                     @click="profileForm.avatar_url = emoji" class="emoji-item">
                 {{ emoji }}
               </span>
             </div>
-            <button type="submit" class="x-btn-dark" style="background: var(--x-blue); color: white; height: 40px; margin-top: 20px;">
-              保存修改
-            </button>
+            <button type="submit" class="xhs-btn-primary edit-submit">保存修改</button>
           </form>
         </div>
       </div>
@@ -144,17 +142,43 @@ const authMode = ref('login')
 const showEditModal = ref(false)
 const loading = ref(true)
 
-// 登录注册表单
 const form = reactive({ username: '', password: '' })
 
-// 个人名片表单（瞬间读取缓存，0ms秒开）
 const profileForm = reactive({
   nickname: authStore.nickname || authStore.username,
   avatar_url: authStore.avatar || '👤'
 })
 
-// 我的历史动态
 const myPosts = ref([])
+
+// 我的笔记卡片视觉（确定性）
+const GRADS = [
+  'linear-gradient(135deg,#ffd8e2 0%,#fff0f4 100%)',
+  'linear-gradient(135deg,#d9e9ff 0%,#eef5ff 100%)',
+  'linear-gradient(135deg,#dcf7e3 0%,#f1fdf4 100%)',
+  'linear-gradient(135deg,#fff0d1 0%,#fff9ed 100%)',
+  'linear-gradient(135deg,#e8e0ff 0%,#f6f1ff 100%)',
+  'linear-gradient(135deg,#ffe0d1 0%,#fff2eb 100%)',
+]
+const EMOJIS = ['🌿', '☕', '📷', '🍜', '🎨', '🏃', '📚', '✈️', '🎧', '🌷']
+const noteHash = (s = '') => {
+  let h = 2166136261
+  const str = String(s)
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return h >>> 0
+}
+const noteCoverStyle = (p, idx) => {
+  const h = noteHash(`${p.id}|${p.content}|${idx}`)
+  return { background: GRADS[h % GRADS.length], height: 140 + ((h >>> 4) % 5) * 14 + 'px' }
+}
+const noteEmoji = (p, idx) => EMOJIS[noteHash(`${p.id}|${p.content}|${idx}`) % EMOJIS.length]
+const noteLikes = (p, idx) => {
+  const n = 30 + (noteHash(`${p.id}|${p.content}`) % 6800)
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`
+}
 
 onMounted(() => {
   if (authStore.isLoggedIn) {
@@ -163,7 +187,6 @@ onMounted(() => {
   }
 })
 
-// 获取个人名片
 const fetchProfile = async () => {
   try {
     const res = await apiFetch(`/auth/profile/${authStore.username}`)
@@ -171,7 +194,6 @@ const fetchProfile = async () => {
     if (res.ok) {
       profileForm.nickname = data.nickname || authStore.username
       profileForm.avatar_url = data.avatar || '👤'
-      // 实时同步写入全局状态银行，触发全站侧边栏、顶栏瞬间更新
       authStore.updateProfileState(profileForm.nickname, profileForm.avatar_url)
     }
   } catch (err) {
@@ -179,14 +201,13 @@ const fetchProfile = async () => {
   }
 }
 
-// 获取我发过的历史动态
 const fetchMyPosts = async () => {
   loading.value = true
   try {
     const res = await apiFetch(`/moments/user/${authStore.username}`)
     const data = await res.json()
     if (res.ok) {
-      myPosts.value = data.moments
+      myPosts.value = data.moments || []
     }
   } catch (err) {
     console.error('获取个人动态失败', err)
@@ -195,7 +216,6 @@ const fetchMyPosts = async () => {
   }
 }
 
-// 登录注册
 const handleSubmit = async () => {
   const endpoint = authMode.value === 'login' ? '/auth/login' : '/auth/register'
   try {
@@ -223,7 +243,6 @@ const handleSubmit = async () => {
   }
 }
 
-// 更新个人资料
 const updateProfile = async () => {
   try {
     const res = await apiFetch('/auth/profile', {
@@ -236,9 +255,8 @@ const updateProfile = async () => {
     if (res.ok) {
       authStore.updateProfileState(profileForm.nickname.trim(), profileForm.avatar_url.trim())
       showEditModal.value = false
-      // 资料变更后让主页缓存失效，避免别人/自己再打开看到旧昵称头像
       invalidateCache(`profile:${authStore.username}`)
-      fetchMyPosts() // 重新刷一遍我的帖子，让帖子里的头像昵称也实时同步
+      fetchMyPosts()
     }
   } catch (err) {
     console.error(err)
@@ -246,7 +264,6 @@ const updateProfile = async () => {
   }
 }
 
-// 安全注销
 const handleLogout = () => {
   chatStore.disconnectWebSocket()
   authStore.logout()
@@ -254,96 +271,196 @@ const handleLogout = () => {
 }
 </script>
 
-
-
-
 <style scoped>
-/* 𝕏 经典个人主页专属排版 */
-.auth-wrapper { width: 100%; position: relative; }
-.auth-card { width: 100%; max-width: 360px; text-align: center; margin: 40px auto; }
-.brand-logo-large { width: 80px; height: 80px; margin: 0 auto 24px auto; }
+.auth-wrapper { width: 100%; background: #fff; min-height: calc(100vh - var(--app-top) - var(--app-bottom)); }
+
+/* ============ 登录 ============ */
+.auth-card {
+  width: 100%;
+  max-width: 360px;
+  margin: 0 auto;
+  padding: 56px 24px 40px;
+  text-align: center;
+}
+.brand-logo-large { width: 74px; height: 74px; margin: 0 auto 20px; }
 .brand-logo-large .drive-logo-svg { width: 100%; height: 100%; }
-.auth-title { font-size: 1.5rem; font-weight: 800; margin-bottom: 24px; letter-spacing: -0.5px; background: linear-gradient(135deg, #1d9bf0, #4f46e5); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.auth-title { font-size: 1.5rem; font-weight: 900; margin: 0 0 6px; color: var(--xhs-text); letter-spacing: -0.4px; }
+.auth-sub { font-size: 0.86rem; color: var(--xhs-text-3); margin: 0 0 28px; }
 
-.x-input-group { margin-bottom: 16px; }
+.form-container { width: 100%; }
+.x-input-group { margin-bottom: 14px; }
 .x-input-group input {
-  width: 100%; height: 46px; padding: 0 16px; border: 1px solid var(--x-border); border-radius: 8px;
-  background: transparent; color: var(--x-text-main); box-sizing: border-box; font-size: 0.95rem; outline: none;
+  width: 100%;
+  height: 48px;
+  padding: 0 16px;
+  border: 1.5px solid transparent;
+  border-radius: 14px;
+  background: #f4f4f6;
+  color: var(--xhs-text);
+  box-sizing: border-box;
+  font-size: 0.94rem;
+  outline: none;
+  transition: all 0.16s;
 }
-.x-input-group input:focus { border-color: var(--x-blue); }
+.x-input-group input:focus { border-color: var(--xhs-red); background: #fff; box-shadow: 0 0 0 3px rgba(255, 36, 66, 0.1); }
+.x-input-group input::placeholder { color: var(--xhs-text-3); }
+.auth-submit { width: 100%; height: 46px; margin-top: 8px; font-size: 1rem; }
+.toggle-text { font-size: 0.88rem; color: var(--xhs-text-3); margin-top: 22px; }
+.toggle-text a { color: var(--xhs-red); text-decoration: none; font-weight: 700; cursor: pointer; margin-left: 4px; }
 
-.x-btn-dark {
-  width: 100%; height: 44px; background: #0f1419; color: #ffffff; border: none; border-radius: 9999px; font-weight: bold; font-size: 1rem; cursor: pointer; transition: background 0.2s; margin-top: 10px;
-}
-.x-btn-dark:hover { background: #272c30; }
-.toggle-text { font-size: 0.9rem; color: var(--x-text-gray); margin-top: 20px; }
-.toggle-text a { color: var(--x-blue); text-decoration: none; font-weight: bold; cursor: pointer; }
-
-/* 🌟 已登录：个人主页排版 */
+/* ============ 个人主页 ============ */
 .profile-page-container { width: 100%; }
-.profile-hero-card {
-  display: flex; flex-direction: column; align-items: center; padding: 24px 16px; border-bottom: 1px solid var(--x-border); text-align: center;
+.profile-banner {
+  height: 118px;
+  background: linear-gradient(135deg, #ffd9e1 0%, #ffeef2 45%, #fff 100%);
+  position: relative;
 }
 .profile-avatar-big {
-  width: 80px; height: 80px; background: #ffffff; border: 1px solid var(--x-border); border-radius: 50%; font-size: 2.5rem; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 12px;
+  position: absolute;
+  left: 20px;
+  bottom: -36px;
+  width: 82px;
+  height: 82px;
+  background: #fff;
+  border-radius: 50%;
+  font-size: 2.4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-shadow: 0 0 0 4px #fff, 0 6px 18px rgba(0, 0, 0, 0.12);
 }
+.avatar-img-el { width: 100%; height: 100%; object-fit: cover; }
 
-.profile-meta-info { flex: 1; display: flex; flex-direction: column; }
-.profile-nickname { margin: 0; font-size: 1.5rem; font-weight: 800; color: var(--x-text-main); }
-.profile-handle { margin: 4px 0 16px 0; color: var(--x-text-gray); font-size: 1rem; }
-.profile-actions-row { display: flex; gap: 12px; justify-content: center; }
-
-/* 扁平化丸子按钮 */
-.x-btn-pill-light {
-  background: transparent; color: var(--x-text-main); border: 1px solid var(--x-border); font-weight: bold; font-size: 0.85rem; padding: 0 16px; height: 34px; border-radius: 9999px; cursor: pointer; transition: background 0.15s;
+.profile-meta { padding: 46px 20px 16px; }
+.profile-name-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.profile-nickname { margin: 0; font-size: 1.35rem; font-weight: 900; color: var(--xhs-text); }
+.profile-actions-row { display: flex; gap: 8px; }
+.btn-edit {
+  background: #fff;
+  color: var(--xhs-text);
+  border: 1px solid var(--xhs-line);
+  font-weight: 700;
+  font-size: 0.8rem;
+  padding: 0 16px;
+  height: 32px;
+  border-radius: var(--xhs-radius-pill);
+  cursor: pointer;
+  transition: background 0.15s;
 }
-.x-btn-pill-light:hover { background: var(--x-bg-hover); }
-
-.x-btn-danger-pill {
-  background: transparent; color: #ef4444; border: 1px solid #fca5a5; font-weight: bold; font-size: 0.85rem; padding: 0 16px; height: 34px; border-radius: 9999px; cursor: pointer; transition: all 0.15s;
+.btn-edit:hover { background: #fafafa; }
+.btn-logout {
+  background: var(--xhs-red-soft);
+  color: var(--xhs-red);
+  border: none;
+  font-weight: 700;
+  font-size: 0.8rem;
+  padding: 0 16px;
+  height: 32px;
+  border-radius: var(--xhs-radius-pill);
+  cursor: pointer;
 }
-.x-btn-danger-pill:hover { background: #fee2e2; border-color: #ef4444; }
+.btn-logout:hover { background: #ffe1e6; }
+.profile-handle { margin: 6px 0 14px; color: var(--xhs-text-3); font-size: 0.86rem; }
+.profile-stats { display: flex; gap: 26px; }
+.stat { display: flex; align-items: baseline; gap: 5px; font-size: 0.82rem; color: var(--xhs-text-3); }
+.stat b { font-size: 1rem; font-weight: 800; color: var(--xhs-text); }
 
-/* 个人时间轴 */
-.my-timeline { width: 100%; }
-.timeline-title { font-size: 1.1rem; font-weight: 800; padding: 16px 16px 8px 16px; margin: 0; text-align: left; }
-.no-posts-hint { text-align: center; color: var(--x-text-gray); font-size: 0.95rem; padding: 40px; }
-
-/* 我的推文卡片 */
-.my-tweet-card { display: flex; padding: 16px; border-bottom: 1px solid var(--x-border); gap: 12px; }
-.my-tweet-avatar {
-  width: 40px; height: 40px; border-radius: 50%; background: #ffffff; border: 1px solid var(--x-border); display: flex; align-items: center; justify-content: center; font-size: 1.5rem; overflow: hidden;
+/* 我的笔记 */
+.my-notes-section { padding: 4px 10px 24px; border-top: 1px solid var(--xhs-line); }
+.section-head { font-size: 0.98rem; font-weight: 800; margin: 16px 6px 10px; }
+.notes-grid { column-count: 2; column-gap: 10px; }
+.note-card {
+  break-inside: avoid;
+  margin: 0 0 10px;
+  background: #fff;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid #f2f2f4;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+  animation: xhs-fade-up 0.3s ease both;
 }
-.my-tweet-main { flex: 1; text-align: left; }
-.my-tweet-header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
-.my-tweet-author { font-weight: bold; font-size: 0.95rem; color: var(--x-text-main); }
-.my-tweet-handle { color: var(--x-text-gray); font-size: 0.85rem; }
-.my-tweet-content { font-size: 0.95rem; line-height: 1.5; word-wrap: break-word; color: var(--x-text-main); }
-
-/* 编辑弹窗表单组 */
-.x-input-group-edit { margin-bottom: 16px; text-align: left;}
-.x-input-field {
-  width: 100%; height: 46px; padding: 0 16px; border: 1px solid var(--x-border); border-radius: 8px; background: transparent; color: var(--x-text-main); box-sizing: border-box; font-size: 0.95rem; outline: none;
+.note-cover { position: relative; width: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.cover-emoji { font-size: 2.2rem; filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.12)); }
+.note-body { padding: 9px 10px 11px; }
+.note-title {
+  margin: 0;
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.42;
+  color: var(--xhs-text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
 }
-.x-input-field:focus { border-color: var(--x-blue); }
-.edit-label { display: block; font-size: 0.8rem; color: var(--x-text-gray); font-weight: bold; margin-bottom: 6px; padding-left: 2px; }
+.note-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+.note-time { font-size: 0.68rem; color: var(--xhs-text-3); }
+.note-like { font-size: 0.7rem; color: var(--xhs-text-3); }
 
-.emoji-picker { display: flex; justify-content: space-between; margin-bottom: 16px; padding: 0 4px; }
+/* 骨架 */
+.notes-grid .note-skeleton, .note-skeleton {
+  break-inside: avoid;
+  margin-bottom: 10px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid #f2f2f4;
+}
+.note-skeleton-cover { height: 150px; background: #f0f1f3; animation: xhs-pulse 1.4s infinite; }
+.note-skeleton-line { height: 10px; margin: 10px; border-radius: 5px; background: #f0f1f3; }
+
+/* 编辑弹窗 */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+.modal-card {
+  width: 100%;
+  max-width: 400px;
+  background: #fff;
+  border-radius: 22px;
+  padding: 26px 22px 22px;
+  position: relative;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.24);
+  animation: xhs-fade-up 0.22s ease;
+  text-align: left;
+}
+.modal-close {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  background: transparent;
+  border: none;
+  font-size: 1.1rem;
+  cursor: pointer;
+  color: var(--xhs-text-3);
+}
+.edit-title { margin: 0 0 20px; font-size: 1.15rem; font-weight: 800; text-align: center; }
+.edit-group { margin-bottom: 14px; }
+.edit-label { display: block; font-size: 0.78rem; color: var(--xhs-text-3); font-weight: 700; margin-bottom: 6px; }
+.edit-input {
+  width: 100%;
+  height: 46px;
+  padding: 0 14px;
+  border: 1.5px solid transparent;
+  border-radius: 12px;
+  background: #f4f4f6;
+  color: var(--xhs-text);
+  box-sizing: border-box;
+  font-size: 0.92rem;
+  outline: none;
+}
+.edit-input:focus { border-color: var(--xhs-red); background: #fff; }
+.emoji-picker { display: flex; justify-content: space-between; margin: 4px 0 18px; padding: 0 2px; }
 .emoji-item { font-size: 1.5rem; cursor: pointer; transition: transform 0.1s; }
 .emoji-item:hover { transform: scale(1.2); }
-
-/* 弹窗遮罩与卡片 */
-.modal-backdrop { position: fixed; top: 0; bottom: 0; left: 0; right: 0; background: rgba(0, 0, 0, 0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-.modal-card { width: 90%; max-width: 450px; background: white; border-radius: 20px; max-height: 80vh; display: flex; flex-direction: column; overflow: hidden; position: relative; box-shadow: 0 8px 30px rgba(0,0,0,0.15); }
-.modal-close { position: absolute; top: 16px; right: 16px; background: transparent; border: none; font-size: 1.25rem; font-weight: bold; cursor: pointer; color: var(--x-text-gray); }
-
-/* 骨架屏 */
-@keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
-.skeleton-container { display: flex; flex-direction: column; }
-.skeleton-card { display: flex; gap: 12px; padding: 16px; border-bottom: 1px solid var(--x-border); animation: pulse 1.5s infinite; }
-.skeleton-avatar { width: 40px; height: 40px; border-radius: 50%; background: #eff3f4; }
-.skeleton-info { flex: 1; display: flex; flex-direction: column; gap: 8px; justify-content: center; }
-.skeleton-line { height: 11px; background: #eff3f4; border-radius: 4px; }
-.skeleton-line.short { width: 25%; }
-.skeleton-line.long { width: 85%; }
+.edit-submit { width: 100%; }
 </style>
