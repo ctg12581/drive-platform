@@ -69,28 +69,37 @@
 
     <!-- 作品列表：按动漫分类 -->
     <template v-else>
-      <div class="anime-section-hint" v-if="!loadingWorks">共 {{ works.length }} 部作品</div>
+      <div class="anime-section-hint" v-if="!loadingWorks">
+        共 {{ totalWorks }} 部作品<template v-if="works.length < totalWorks">，已加载 {{ works.length }}</template>
+      </div>
       <div v-if="loadingWorks" class="anime-loading">加载作品分类中…</div>
       <div v-else-if="works.length === 0" class="xhs-empty">
         <div style="font-size:2.5rem;margin-bottom:12px;">📚</div>
         <p>没有找到匹配的动漫作品</p>
       </div>
-      <div v-else class="work-grid">
-        <div v-for="w in works" :key="w.region + '|' + w.work" class="work-card" @click="openWork(w)">
-          <div class="work-cover" :style="{ background: themeOf(w.region).grad }">
-            <span class="anime-region-badge" :style="{ background: themeOf(w.region).solid }">
-              {{ w.region_emoji }} {{ w.region_name }}
-            </span>
-            <img v-if="w.cover" class="work-cover-img" :src="w.cover" :alt="w.work" loading="lazy" @error="onWorkImgError($event, w)" />
-            <span v-else class="work-cover-emoji">{{ w.region_emoji || '🎬' }}</span>
-          </div>
-          <div class="work-info">
-            <div class="work-name">{{ w.work }}</div>
-            <div class="work-sub" v-if="w.work_en && w.work_en !== w.work">{{ w.work_en }}</div>
-            <div class="work-count">{{ w.count }} 个角色 ›</div>
+      <template v-else>
+        <div class="work-grid">
+          <div v-for="w in works" :key="w.region + '|' + w.work" class="work-card" @click="openWork(w)">
+            <div class="work-cover" :style="{ background: themeOf(w.region).grad }">
+              <span class="anime-region-badge" :style="{ background: themeOf(w.region).solid }">
+                {{ w.region_emoji }} {{ w.region_name }}
+              </span>
+              <img v-if="w.cover" class="work-cover-img" :src="w.cover" :alt="w.work" loading="lazy" @error="onWorkImgError($event, w)" />
+              <span v-else class="work-cover-emoji">{{ w.region_emoji || '🎬' }}</span>
+            </div>
+            <div class="work-info">
+              <div class="work-name">{{ w.work }}</div>
+              <div class="work-sub" v-if="w.work_en && w.work_en !== w.work">{{ w.work_en }}</div>
+              <div class="work-count">{{ w.count }} 个角色 ›</div>
+            </div>
           </div>
         </div>
-      </div>
+        <div v-if="worksHasMore" class="load-more-wrap">
+          <button class="load-more-btn" :disabled="loadingMoreWorks" @click="loadMoreWorks">
+            {{ loadingMoreWorks ? '加载中…' : '加载更多作品' }}
+          </button>
+        </div>
+      </template>
     </template>
 
     <!-- 详情弹窗 -->
@@ -161,6 +170,13 @@ const activeRegion = ref('all')
 const activeWork = ref(null)
 const detail = ref(null)
 
+// 作品列表分页（角色数据进入作品后再拉取）
+const WORKS_PAGE_SIZE = 30
+const worksPage = ref(1)
+const worksHasMore = ref(false)
+const loadingMoreWorks = ref(false)
+const totalWorks = ref(0)
+
 // 各地区配色（active 高亮 / 封面渐变 / 徽标 / 弹窗）
 const REGION_THEME = {
   jp: { solid: '#ff5c8a', soft: 'rgba(255, 92, 138, 0.10)', grad: 'linear-gradient(135deg,#ffe3ea 0%,#fff3f6 100%)' },
@@ -230,26 +246,62 @@ const loadRegions = async () => {
   }
 }
 
+const fetchWorksPage = async (targetPage) => {
+  const qs = new URLSearchParams()
+  if (activeRegion.value && activeRegion.value !== 'all') qs.set('region', activeRegion.value)
+  const kw = searchQuery.value.trim()
+  if (kw) qs.set('keyword', kw)
+  qs.set('page', String(targetPage))
+  qs.set('page_size', String(WORKS_PAGE_SIZE))
+  const res = await apiFetch(`/anime/works?${qs.toString()}`)
+  const json = await res.json()
+  if (!res.ok || !json.success) throw new Error('获取作品分类失败')
+  return json
+}
+
 const loadWorks = async (force = false) => {
   loadingWorks.value = true
+  worksPage.value = 1
   try {
     const region = activeRegion.value
     const keyword = searchQuery.value.trim()
     const data = await cachedFetch(
-      `anime:works:${region}:${keyword}`,
-      async () => {
-        const res = await apiFetch(`/anime/works${buildQuery()}`)
-        const json = await res.json()
-        if (!res.ok || !json.success) throw new Error('获取作品分类失败')
-        return json
-      },
+      `anime:works:${region}:${keyword}:1`,
+      () => fetchWorksPage(1),
       { ttl: 10 * 60 * 1000, force },
     )
     works.value = data.works || []
+    worksHasMore.value = !!data.has_more
+    totalWorks.value = data.total || works.value.length
   } catch {
     works.value = []
+    worksHasMore.value = false
+    totalWorks.value = 0
   } finally {
     loadingWorks.value = false
+  }
+}
+
+const loadMoreWorks = async () => {
+  if (loadingMoreWorks.value || !worksHasMore.value) return
+  loadingMoreWorks.value = true
+  const nextPage = worksPage.value + 1
+  try {
+    const region = activeRegion.value
+    const keyword = searchQuery.value.trim()
+    const data = await cachedFetch(
+      `anime:works:${region}:${keyword}:${nextPage}`,
+      () => fetchWorksPage(nextPage),
+      { ttl: 10 * 60 * 1000 },
+    )
+    works.value = works.value.concat(data.works || [])
+    worksPage.value = nextPage
+    worksHasMore.value = !!data.has_more
+    totalWorks.value = data.total ?? totalWorks.value
+  } catch {
+    /* 单次加载失败保留已加载作品 */
+  } finally {
+    loadingMoreWorks.value = false
   }
 }
 
@@ -511,6 +563,18 @@ onMounted(() => {
   text-overflow: ellipsis;
 }
 .work-count { font-size: 0.72rem; color: var(--xhs-red); font-weight: 700; margin-top: 6px; }
+.load-more-wrap { display: flex; justify-content: center; padding: 14px 0 4px; }
+.load-more-btn {
+  border: 1.5px solid #ececf0;
+  background: #f6f6f8;
+  color: var(--xhs-text-2, #555);
+  border-radius: 999px;
+  padding: 9px 22px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.load-more-btn:disabled { opacity: 0.6; cursor: default; }
 
 /* 作品返回栏 */
 .work-back-bar {

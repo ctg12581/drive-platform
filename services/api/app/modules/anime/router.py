@@ -151,51 +151,79 @@ async def get_anime_regions():
     return {"success": True, "regions": _build_region_summary(await _load_characters())}
 
 
-# 3. 按动漫作品分组（图鉴分类浏览：每部作品的角色数量 / 封面 / 地区）
+# 3. 按动漫作品分页（只返回作品聚合，不返回角色；进入作品后再调 /list 取角色）
 @router.get("/works")
 async def get_anime_works(
     keyword: str = Query("", description="按关键词过滤：作品 / 人物 / 标签"),
     region: str = Query("", description="按地区过滤：jp 日本 / cn 中国 / us 美国，留空返回全部"),
+    page: int = Query(1, ge=1, description="页码，从 1 开始"),
+    page_size: int = Query(30, ge=1, le=100, description="每页作品数"),
 ):
-    keyword = keyword.strip().lower()
+    keyword = keyword.strip()
     region = region.strip().lower()
     if region and region not in REGION_META:
         raise HTTPException(status_code=400, detail="不支持的地区筛选")
 
-    characters = await _load_characters()
-    if keyword:
-        characters = [c for c in characters if _match_keyword(c, keyword)]
-    if region:
-        characters = [c for c in characters if c["region"] == region]
+    offset = (page - 1) * page_size
+    kw_like = f"%{keyword}%"
+    where = (
+        "WHERE ($1 = '' OR region = $1) AND ("
+        "$2 = '' OR work ILIKE $3 OR work_en ILIKE $3 OR name ILIKE $3 OR name_en ILIKE $3 "
+        "OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(tags) AS tg WHERE tg ILIKE $3)"
+        ")"
+    )
 
-    groups: dict[tuple[str, str], dict] = {}
-    for c in characters:
-        work_name = c.get("work", "")
-        if not work_name:
-            continue
-        key = (c["region"], work_name)
-        group = groups.get(key)
-        if group is None:
-            meta = REGION_META.get(c["region"], {})
-            group = {
-                "work": work_name,
-                "work_en": c.get("work_en", ""),
-                "region": c["region"],
-                "region_name": meta.get("name", ""),
-                "region_full": meta.get("full", ""),
-                "region_emoji": meta.get("emoji", ""),
-                "count": 0,
-                "cover": "",
-                "popularity": 0,
-            }
-            groups[key] = group
-        group["count"] += 1
-        group["popularity"] = max(group["popularity"], int(c.get("popularity") or 0))
-        if not group["cover"] and c.get("image_url"):
-            group["cover"] = c["image_url"]
+    try:
+        async with db_conn() as conn:
+            total = await conn.fetchval(
+                f"SELECT COUNT(*) FROM (SELECT 1 FROM anime_characters {where} GROUP BY region, work) AS t",
+                region, keyword, kw_like,
+            )
+            rows = await conn.fetch(
+                f"""
+                SELECT region, work,
+                       MAX(work_en) AS work_en,
+                       COUNT(*)::int AS cnt,
+                       MAX(popularity)::int AS popularity,
+                       (ARRAY_AGG(image_url ORDER BY popularity DESC)
+                            FILTER (WHERE image_url <> ''))[1] AS cover
+                FROM anime_characters
+                {where}
+                GROUP BY region, work
+                ORDER BY popularity DESC, cnt DESC, work ASC
+                LIMIT $4 OFFSET $5
+                """,
+                region, keyword, kw_like, page_size, offset,
+            )
+    except Exception as exc:  # noqa: BLE001 - 读库失败返回空页
+        print(f"⚠️ [ANIME] 读取作品列表失败: {exc}")
+        return {"success": True, "total": 0, "page": page, "page_size": page_size,
+                "has_more": False, "works": []}
 
-    works = sorted(groups.values(), key=lambda w: (w["popularity"], w["count"]), reverse=True)
-    return {"success": True, "total": len(works), "works": works}
+    works = []
+    for row in rows:
+        meta = REGION_META.get(row["region"], {})
+        works.append({
+            "work": row["work"],
+            "work_en": row["work_en"] or "",
+            "region": row["region"],
+            "region_name": meta.get("name", ""),
+            "region_full": meta.get("full", ""),
+            "region_emoji": meta.get("emoji", ""),
+            "count": int(row["cnt"] or 0),
+            "cover": row["cover"] or "",
+            "popularity": int(row["popularity"] or 0),
+        })
+
+    total = int(total or 0)
+    return {
+        "success": True,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "has_more": offset + len(works) < total,
+        "works": works,
+    }
 
 
 # 4. 获取单个动漫人物详情
