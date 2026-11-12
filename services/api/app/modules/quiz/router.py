@@ -99,7 +99,27 @@ async def get_my_quiz_config(current_user: dict = Depends(get_current_user)):
 @router.post("/create")
 async def create_user_quiz(data: CreateQuizSchema, current_user: dict = Depends(get_current_user)):
     """保存 / 更新我的测验。"""
+    if not data.questions:
+        raise HTTPException(status_code=400, detail="测验至少需要一道题目")
+    if len(data.questions) > 50:
+        raise HTTPException(status_code=400, detail="测验题目数量不能超过 50 道")
+
+    username = current_user["username"]
     with db_cursor(commit=True) as cur:
+        # 校验题目存在且对当前用户可见（公共题或本人创建），防止引用他人私有题
+        question_ids = [q.question_id for q in data.questions]
+        cur.execute(
+            """
+            SELECT id FROM quiz_questions
+            WHERE id = ANY(%s) AND (creator = 'admin' OR creator = 'system' OR creator = %s)
+            """,
+            (question_ids, username),
+        )
+        valid_ids = {row[0] for row in cur.fetchall()}
+        invalid = [qid for qid in question_ids if qid not in valid_ids]
+        if invalid:
+            raise HTTPException(status_code=400, detail=f"存在无效或无权使用的题目: {invalid}")
+
         cur.execute(
             """
             INSERT INTO user_quizzes (username, title)
@@ -107,7 +127,7 @@ async def create_user_quiz(data: CreateQuizSchema, current_user: dict = Depends(
             ON CONFLICT (username) DO UPDATE SET title = EXCLUDED.title
             RETURNING id
             """,
-            (current_user["username"], data.title.strip()),
+            (username, data.title.strip()),
         )
         quiz_id = cur.fetchone()[0]
 
@@ -125,44 +145,39 @@ async def create_user_quiz(data: CreateQuizSchema, current_user: dict = Depends(
 
 @router.get("/friends-list")
 async def get_friends_quizzes(current_user: dict = Depends(get_current_user)):
-    """一键获取所有好友的测验列表与我的得分。"""
+    """一键获取所有好友的测验列表与我的得分（单次查询，无 N+1）。"""
     username = current_user["username"]
     with db_cursor() as cur:
         cur.execute(
             """
             SELECT uq.id, uq.username, uq.title, COALESCE(u.nickname, uq.username),
-                   COALESCE(u.avatar_url, '👤')
+                   COALESCE(u.avatar_url, '👤'), qa.score
             FROM user_quizzes uq
             JOIN users u ON uq.username = u.username
+            LEFT JOIN quiz_attempts qa
+                   ON qa.quiz_id = uq.id AND qa.respondent_username = %s
             WHERE uq.username IN (
                 SELECT CASE WHEN f.username = %s THEN f.friend_username ELSE f.username END
                 FROM friendships f
                 WHERE (f.username = %s OR f.friend_username = %s) AND f.status = 'accepted'
             )
             """,
-            (username, username, username),
+            (username, username, username, username),
         )
         rows = cur.fetchall()
 
-        quizzes = []
-        for row in rows:
-            quiz_id, friend_username, title, nickname, avatar = row
-            cur.execute(
-                "SELECT score FROM quiz_attempts WHERE quiz_id = %s AND respondent_username = %s",
-                (quiz_id, username),
-            )
-            attempt = cur.fetchone()
-            quizzes.append(
-                {
-                    "quiz_id": quiz_id,
-                    "username": friend_username,
-                    "title": title,
-                    "nickname": nickname,
-                    "avatar": avatar,
-                    "already_challenged": attempt is not None,
-                    "score": attempt[0] if attempt else 0.0,
-                }
-            )
+    quizzes = [
+        {
+            "quiz_id": row[0],
+            "username": row[1],
+            "title": row[2],
+            "nickname": row[3],
+            "avatar": row[4],
+            "already_challenged": row[5] is not None,
+            "score": row[5] if row[5] is not None else 0.0,
+        }
+        for row in rows
+    ]
     return {"success": True, "quizzes": quizzes}
 
 

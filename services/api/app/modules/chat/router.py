@@ -1,16 +1,16 @@
 # app/modules/chat/router.py
 """实时聊天、好友关系与图片上传模块。"""
 import uuid
-from datetime import timedelta
-from typing import Dict
+from typing import Dict, Set
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
 from app.core.db import db_cursor
 from app.core.storage import r2_client
-from app.modules.auth.service import get_current_user
+from app.core.timeutil import to_iso_utc
+from app.modules.auth.service import decode_token, get_current_user
 
 router = APIRouter(prefix="/chat", tags=["Chat 实时社交与好友关系"])
 
@@ -18,6 +18,13 @@ MUTUAL_FRIENDSHIP_WHERE = """
     (f.username = %s AND f.friend_username = %s)
     OR (f.username = %s AND f.friend_username = %s)
 """
+
+IMAGE_CONTENT_TYPES = {
+    "png": "image/png",
+    "jpeg": "image/jpeg",
+    "gif": "image/gif",
+    "webp": "image/webp",
+}
 
 
 class AddFriendSchema(BaseModel):
@@ -30,6 +37,14 @@ class AcceptFriendSchema(BaseModel):
 
 class DeleteFriendSchema(BaseModel):
     friend_username: str = Field(...)
+
+
+def _are_friends(cur, username: str, friend: str) -> bool:
+    cur.execute(
+        f"SELECT 1 FROM friendships f WHERE f.status = 'accepted' AND ({MUTUAL_FRIENDSHIP_WHERE})",
+        (username, friend, friend, username),
+    )
+    return cur.fetchone() is not None
 
 
 @router.post("/add-friend")
@@ -143,6 +158,7 @@ def summarize_last_message(raw_msg: str, sender: str, current_username: str, fri
 
 @router.get("/friends")
 async def get_friends(current_user: dict = Depends(get_current_user)):
+    """好友列表：固定 3 次查询完成，避免逐个好友的 N+1 查询。"""
     username = current_user["username"]
     with db_cursor() as cur:
         cur.execute(
@@ -158,46 +174,50 @@ async def get_friends(current_user: dict = Depends(get_current_user)):
             """,
             (username, username, username, username, username),
         )
-        records = cur.fetchall()
+        friend_rows = cur.fetchall()
 
-        friends = []
-        for friend_username, friend_nickname, friend_avatar in records:
-            cur.execute(
-                "SELECT COUNT(*) FROM chat_messages "
-                "WHERE sender = %s AND receiver = %s AND is_read = FALSE",
-                (friend_username, username),
-            )
-            unread_count = cur.fetchone()[0]
+        cur.execute(
+            "SELECT sender, COUNT(*) FROM chat_messages "
+            "WHERE receiver = %s AND is_read = FALSE GROUP BY sender",
+            (username,),
+        )
+        unread_map = {row[0]: row[1] for row in cur.fetchall()}
 
-            cur.execute(
-                """
-                SELECT message, sender, created_at, is_recalled
+        cur.execute(
+            """
+            SELECT DISTINCT ON (other) other, message, sender, created_at, is_recalled
+            FROM (
+                SELECT CASE WHEN sender = %s THEN receiver ELSE sender END AS other,
+                       message, sender, created_at, is_recalled
                 FROM chat_messages
-                WHERE (sender = %s AND receiver = %s) OR (sender = %s AND receiver = %s)
-                ORDER BY created_at DESC
-                LIMIT 1
-                """,
-                (username, friend_username, friend_username, username),
-            )
-            msg_row = cur.fetchone()
+                WHERE sender = %s OR receiver = %s
+            ) t
+            ORDER BY other, created_at DESC
+            """,
+            (username, username, username),
+        )
+        last_msg_map = {row[0]: row for row in cur.fetchall()}
 
-            last_msg = ""
-            last_msg_time = ""
-            if msg_row:
-                raw_msg, sender, created_at, is_recalled = msg_row
-                last_msg = summarize_last_message(raw_msg, sender, username, friend_nickname, is_recalled)
-                last_msg_time = (created_at + timedelta(hours=8)).strftime("%H:%M")
+    friends = []
+    for friend_username, friend_nickname, friend_avatar in friend_rows:
+        msg_row = last_msg_map.get(friend_username)
+        last_msg = ""
+        last_msg_time = None
+        if msg_row:
+            _, raw_msg, sender, created_at, is_recalled = msg_row
+            last_msg = summarize_last_message(raw_msg, sender, username, friend_nickname, is_recalled)
+            last_msg_time = to_iso_utc(created_at)
 
-            friends.append(
-                {
-                    "username": friend_username,
-                    "nickname": friend_nickname,
-                    "avatar": friend_avatar,
-                    "last_message": last_msg,
-                    "last_message_time": last_msg_time,
-                    "unread": unread_count,
-                }
-            )
+        friends.append(
+            {
+                "username": friend_username,
+                "nickname": friend_nickname,
+                "avatar": friend_avatar,
+                "last_message": last_msg,
+                "last_message_time": last_msg_time,
+                "unread": unread_map.get(friend_username, 0),
+            }
+        )
     return {"success": True, "friends": friends}
 
 
@@ -240,7 +260,7 @@ async def get_chat_history(friend_username: str, current_user: dict = Depends(ge
                 "to": row[2],
                 "text": display_text,
                 "is_read": row[4],
-                "time": (row[6] + timedelta(hours=8)).strftime("%m-%d %H:%M"),
+                "time": to_iso_utc(row[6]),
                 "self": sender == username,
                 "system": is_system,
             }
@@ -248,59 +268,87 @@ async def get_chat_history(friend_username: str, current_user: dict = Depends(ge
     return {"success": True, "history": history}
 
 
+def _detect_image_extension(data: bytes) -> str | None:
+    """基于文件头魔数识别图片类型，避免仅靠扩展名信任客户端。"""
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "jpeg"
+    if data.startswith(b"GIF87a") or data.startswith(b"GIF89a"):
+        return "gif"
+    if len(data) >= 12 and data[0:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    return None
+
+
 @router.post("/upload")
 async def upload_image(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
-    allowed_extensions = {"png", "jpg", "jpeg", "gif", "webp"}
-    file_extension = file.filename.split(".")[-1].lower()
-    if file_extension not in allowed_extensions:
-        raise HTTPException(status_code=400, detail="只允许上传图片格式文件 (png, jpg, jpeg, gif, webp)")
-
     if not r2_client or not settings.R2_BUCKET_NAME or not settings.R2_PUBLIC_URL:
         raise HTTPException(status_code=500, detail="服务器未正确配置 Cloudflare R2 存储环境变量")
 
-    unique_filename = f"{uuid.uuid4()}.{file_extension}"
-    content_type_map = {
-        "png": "image/png",
-        "jpg": "image/jpeg",
-        "jpeg": "image/jpeg",
-        "gif": "image/gif",
-        "webp": "image/webp",
-    }
-
     try:
-        await file.seek(0)
-        file_bytes = await file.read()
+        # 只读取上限 + 1 字节，超限即拒绝，避免把超大文件整体读进内存
+        file_bytes = await file.read(settings.MAX_UPLOAD_BYTES + 1)
+    finally:
+        await file.close()
+
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="上传文件为空")
+    if len(file_bytes) > settings.MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"图片过大，限制小于 {settings.MAX_UPLOAD_BYTES // (1024 * 1024)}MB",
+        )
+
+    file_extension = _detect_image_extension(file_bytes)
+    if file_extension is None:
+        raise HTTPException(status_code=400, detail="文件内容不是有效图片（支持 png/jpg/gif/webp）")
+
+    unique_filename = f"{uuid.uuid4()}.{file_extension}"
+    try:
         r2_client.put_object(
             Bucket=settings.R2_BUCKET_NAME,
             Key=unique_filename,
             Body=file_bytes,
-            ContentType=content_type_map.get(file_extension, "application/octet-stream"),
+            ContentType=IMAGE_CONTENT_TYPES.get(file_extension, "application/octet-stream"),
         )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"上传至 Cloudflare R2 失败: {exc}") from exc
-    finally:
-        file.file.close()
 
     return {"success": True, "url": f"{settings.R2_PUBLIC_URL.rstrip('/')}/{unique_filename}"}
 
 
 class ConnectionManager:
-    """维护在线用户 -> WebSocket 的映射，并负责消息落库与转发。"""
+    """维护在线用户 -> 多 WebSocket 集合的映射，并负责消息落库与转发。"""
 
     def __init__(self):
-        self.active_connections: Dict[str, WebSocket] = {}
+        self.active_connections: Dict[str, Set[WebSocket]] = {}
 
     async def connect(self, username: str, websocket: WebSocket):
         await websocket.accept()
-        self.active_connections[username] = websocket
+        self.active_connections.setdefault(username, set()).add(websocket)
 
-    def disconnect(self, username: str):
-        self.active_connections.pop(username, None)
+    def disconnect(self, username: str, websocket: WebSocket):
+        conns = self.active_connections.get(username)
+        if not conns:
+            return
+        conns.discard(websocket)
+        if not conns:
+            self.active_connections.pop(username, None)
 
-    async def send_direct_message(self, message: str, sender: str, receiver: str):
-        message_id = None
+    async def send_to_user(self, username: str, payload: dict):
+        for ws in list(self.active_connections.get(username, ())):
+            try:
+                await ws.send_json(payload)
+            except Exception:  # noqa: BLE001 - 单个连接异常不影响其它连接
+                pass
+
+    async def send_direct_message(self, message: str, sender: str, receiver: str) -> int | None:
+        """落库并转发给接收方；非好友或写入失败返回 None。"""
         try:
             with db_cursor(commit=True) as cur:
+                if not _are_friends(cur, sender, receiver):
+                    return None
                 cur.execute(
                     "INSERT INTO chat_messages (sender, receiver, message) VALUES (%s, %s, %s) RETURNING id",
                     (sender, receiver, message),
@@ -308,19 +356,24 @@ class ConnectionManager:
                 message_id = cur.fetchone()[0]
         except Exception as exc:  # noqa: BLE001
             print(f"💾 写入消息历史失败: {exc}")
+            return None
 
-        target = self.active_connections.get(receiver)
-        if target:
-            await target.send_json(
-                {"type": "msg", "id": message_id, "from": sender, "message": message}
-            )
+        await self.send_to_user(
+            receiver, {"type": "msg", "id": message_id, "from": sender, "message": message}
+        )
+        return message_id
 
 
 manager = ConnectionManager()
 
 
 @router.websocket("/ws/{username}")
-async def websocket_endpoint(websocket: WebSocket, username: str):
+async def websocket_endpoint(websocket: WebSocket, username: str, token: str = ""):
+    # 必须携带有效 Token 且与路径用户名一致，防止冒充任意用户
+    if decode_token(token) != username:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
     await manager.connect(username, websocket)
     try:
         while True:
@@ -330,8 +383,17 @@ async def websocket_endpoint(websocket: WebSocket, username: str):
 
             if msg_type == "msg":
                 msg = data.get("message")
+                client_id = data.get("client_id")
                 if target_user and msg:
-                    await manager.send_direct_message(msg, username, target_user)
+                    message_id = await manager.send_direct_message(msg, username, target_user)
+                    if message_id is None:
+                        await websocket.send_json(
+                            {"type": "error", "message": "消息发送失败：对方不是你的好友"}
+                        )
+                    else:
+                        await websocket.send_json(
+                            {"type": "msg_ack", "client_id": client_id, "id": message_id}
+                        )
 
             elif msg_type == "read":
                 if target_user:
@@ -341,10 +403,7 @@ async def websocket_endpoint(websocket: WebSocket, username: str):
                             "WHERE sender = %s AND receiver = %s AND is_read = FALSE",
                             (target_user, username),
                         )
-                    if target_user in manager.active_connections:
-                        await manager.active_connections[target_user].send_json(
-                            {"type": "read", "from": username}
-                        )
+                    await manager.send_to_user(target_user, {"type": "read", "from": username})
 
             elif msg_type == "recall":
                 message_id = data.get("message_id")
@@ -354,9 +413,11 @@ async def websocket_endpoint(websocket: WebSocket, username: str):
                             "UPDATE chat_messages SET is_recalled = TRUE WHERE id = %s AND sender = %s",
                             (message_id, username),
                         )
-                    if target_user in manager.active_connections:
-                        await manager.active_connections[target_user].send_json(
-                            {"type": "recall", "from": username, "message_id": message_id}
-                        )
+                    await manager.send_to_user(
+                        target_user, {"type": "recall", "from": username, "message_id": message_id}
+                    )
     except WebSocketDisconnect:
-        manager.disconnect(username)
+        manager.disconnect(username, websocket)
+    except Exception as exc:  # noqa: BLE001
+        print(f"🔌 WebSocket 异常断开: {exc}")
+        manager.disconnect(username, websocket)

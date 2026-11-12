@@ -9,6 +9,17 @@ export const API_BASE = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:3000'
 export const WS_BASE = import.meta.env.VITE_WS_BASE || 'ws://127.0.0.1:3000'
 
 /**
+ * 构造带鉴权 Token 的聊天 WebSocket 地址。
+ * 后端会校验 token 的 sub 与路径 username 一致，避免冒充任意用户。
+ * @param {string} username
+ * @returns {string}
+ */
+export function buildChatWsUrl(username) {
+  const token = useAuthStore().token || ''
+  return `${WS_BASE}/chat/ws/${encodeURIComponent(username)}?token=${encodeURIComponent(token)}`
+}
+
+/**
  * 全站统一请求工具：自动携带 Token、处理 FormData，401 时清理登录态并跳转登录页。
  */
 export const apiFetch = createApiFetch({

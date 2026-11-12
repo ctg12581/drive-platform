@@ -4,7 +4,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { readJSON, writeJSON, isImageUrl } from '@drive/shared'
 import { useAuthStore } from './auth'
-import { apiFetch, WS_BASE } from '../utils/api'
+import { apiFetch, buildChatWsUrl } from '../utils/api'
 
 const PENDING_POLL_INTERVAL = 20000
 const RECONNECT_DELAY = 5000
@@ -95,7 +95,7 @@ export const useChatStore = defineStore('chat', () => {
     if (!authStore.username || ws.value) return
 
     manualClose = false
-    ws.value = new WebSocket(`${WS_BASE}/chat/ws/${authStore.username}`)
+    ws.value = new WebSocket(buildChatWsUrl(authStore.username))
 
     ws.value.onopen = () => {
       connected.value = true
@@ -110,7 +110,23 @@ export const useChatStore = defineStore('chat', () => {
 
     ws.value.onmessage = (event) => {
       const data = JSON.parse(event.data)
-      playNotificationSound()
+
+      // 服务端确认消息已落库：回填真实 id，使刚发出的消息也能撤回
+      if (data.type === 'msg_ack') {
+        const idx = activeMessages.value.findIndex(
+          (m) => m.client_id && m.client_id === data.client_id,
+        )
+        if (idx !== -1) {
+          activeMessages.value[idx].id = data.id
+          if (activeContact.value) setHistory(activeContact.value, [...activeMessages.value])
+        }
+        return
+      }
+
+      if (data.type === 'error') {
+        console.warn('聊天发送失败:', data.message)
+        return
+      }
 
       if (data.type === 'read') {
         if (activeContact.value === data.from) {
@@ -147,6 +163,7 @@ export const useChatStore = defineStore('chat', () => {
 
       const isMsg = !data.type || data.type === 'msg'
       if (isMsg) {
+        playNotificationSound()
         if (activeContact.value === data.from) {
           activeMessages.value.push({
             id: data.id,
@@ -222,7 +239,7 @@ export const useChatStore = defineStore('chat', () => {
 
     const timeLabel = timeStr
       ? timeStr.split(' ')[1] || ''
-      : `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`
+      : new Date().toISOString()
     friend.last_message_time = timeLabel
 
     setFriends([...cachedFriends.value])

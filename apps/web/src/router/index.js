@@ -26,7 +26,10 @@ const routes = [
   { path: '/anime', name: 'Anime', component: AnimeView, meta: { requiresAuth: true } },
 
   // 💡 新增：7. DRIVE 人格评测专用页面（原为孤儿页面，已接入路由）
-  { path: '/drive', name: 'Drive', component: () => import('../views/DriveView.vue'), meta: { requiresAuth: true } }
+  { path: '/drive', name: 'Drive', component: () => import('../views/DriveView.vue'), meta: { requiresAuth: true } },
+
+  // 兜底：未知路由统一回到主页，避免白屏
+  { path: '/:pathMatch(.*)*', redirect: '/home' }
 ]
 
 const router = createRouter({

@@ -1,10 +1,12 @@
 # server.py
 import os
+from pathlib import Path
+
 import uvicorn
 from dotenv import load_dotenv
 
-# 本地调试时，加载 .env 环境变量
-load_dotenv()
+# 本地调试时加载 services/api/.env（固定相对脚本目录，避免受 CWD 影响）
+load_dotenv(Path(__file__).resolve().with_name(".env"))
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 3000))

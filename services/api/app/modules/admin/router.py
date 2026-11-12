@@ -5,14 +5,18 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.core.db import db_cursor
+from app.core.timeutil import to_iso_utc
 from app.modules.auth.service import get_current_user
 
 router = APIRouter(prefix="/admin", tags=["Admin 后台管理模块"])
 
 
 async def get_current_admin(current_user: dict = Depends(get_current_user)):
-    """仅允许 username 为 admin 的管理员访问后台接口。"""
-    if current_user["username"] != "admin":
+    """仅允许数据库 is_admin 为真的账号访问后台接口。"""
+    with db_cursor() as cur:
+        cur.execute("SELECT is_admin FROM users WHERE username = %s", (current_user["username"],))
+        row = cur.fetchone()
+    if not row or not row[0]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="您不是系统管理员，无权访问后台管理系统",
@@ -123,7 +127,7 @@ async def admin_get_users():
             "username": r[1],
             "nickname": r[2],
             "avatar": r[3],
-            "created_at": r[4].isoformat() + "Z",
+            "created_at": to_iso_utc(r[4]),
             "posts_count": r[5],
             "drive_count": r[6],
             "attempts_count": r[7],

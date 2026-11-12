@@ -9,6 +9,7 @@
     "build": "pnpm -r --filter \"./apps/*\" build",
     "build:web": "pnpm --filter drive-model-frontend build",
     "build:admin": "pnpm --filter drive-admin-frontend build",
+    "test:shared": "node --test packages/shared/test",
     "api": "python services/api/server.py"
   }
 }

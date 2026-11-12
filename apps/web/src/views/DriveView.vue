@@ -45,13 +45,20 @@
 </template>
 
 <script setup>
-import { ref, reactive, nextTick } from 'vue'
+import { ref, reactive, nextTick, onUnmounted } from 'vue'
 import { apiFetch } from '../utils/api'
 import Chart from 'chart.js/auto'
 
 const form = reactive({ d: 'B', r: 'B', i: 'B', v: 'B', e: 'B' })
 const result = ref(null)
 let chartInstance = null
+
+onUnmounted(() => {
+  if (chartInstance) {
+    chartInstance.destroy()
+    chartInstance = null
+  }
+})
 
 const dimensions = {
   d: 'Decision (决策力)',

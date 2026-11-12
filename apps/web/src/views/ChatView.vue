@@ -36,7 +36,7 @@
             <div class="contact-details">
               <div class="contact-name-row">
                 <span class="contact-name">{{ friend.nickname }}</span>
-                <span class="contact-time-sub">{{ friend.last_message_time }}</span>
+                <span class="contact-time-sub">{{ formatLocalTime(friend.last_message_time, 'HH:mm') }}</span>
               </div>
               <div class="contact-last-msg">{{ friend.last_message || '点击开始对话' }}</div>
             </div>
@@ -119,7 +119,7 @@
             </button>
 
             <input type="text" v-model="messageInput" placeholder="开始撰写私信..." @keyup.enter="sendMessage" :disabled="!chatStore.connected">
-            <button @click="sendMessage" class="btn-send" :disabled="!messageInput.trim() && !chatStore.connected">
+            <button @click="sendMessage" class="btn-send" :disabled="!messageInput.trim() || !chatStore.connected">
               <svg viewBox="0 0 24 24" class="svg-inline"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
             </button>
           </div>
@@ -202,7 +202,10 @@ watch(selectedContact, (newVal) => {
 
 onMounted(() => {
   fetchFriends()
-  // 💡 彻底修复的 onMounted：完全删除 connectChat() 运行时崩溃漏洞！
+  // 若刷新前停留在某个会话，重新进入时自动加载该会话历史，避免空白聊天窗口
+  if (selectedContact.value) {
+    selectContact(selectedContact.value)
+  }
   window.addEventListener('click', closeAllMenus)
 })
 
@@ -344,14 +347,17 @@ const sendMessage = () => {
   const text = messageInput.value.trim()
   if (!text) return
 
+  const clientId = (crypto?.randomUUID && crypto.randomUUID()) || `${Date.now()}-${Math.random()}`
   chatStore.sendWebSocketPayload({
     type: "msg",
     to: selectedContact.value,
-    message: text
+    message: text,
+    client_id: clientId
   })
   
   chatStore.activeMessages.push({ 
     id: null,
+    client_id: clientId,
     from: authStore.username, 
     text: text, 
     time: getCurrentTimeLabel(), 
@@ -436,15 +442,18 @@ const handleImageUpload = async (event) => {
       const imageUrl = data.url.startsWith('http') ? data.url : `${API_BASE}${data.url}`
 
       // 通过 WebSocket 发送短 URL 链接
+      const clientId = (crypto?.randomUUID && crypto.randomUUID()) || `${Date.now()}-${Math.random()}`
       chatStore.sendWebSocketPayload({
         type: "msg",
         to: selectedContact.value,
-        message: imageUrl
+        message: imageUrl,
+        client_id: clientId
       })
 
       // 本地追加渲染
       chatStore.activeMessages.push({
         id: null,
+        client_id: clientId,
         from: authStore.username,
         text: imageUrl,
         time: getCurrentTimeLabel(),

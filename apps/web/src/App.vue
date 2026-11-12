@@ -612,13 +612,6 @@ body {
 @media (min-width: 1095px) {
   .right-panel { display: block; }
 }
-/* 💡 新增：移动端顶部头像无下划线高亮链接 */
-.avatar-placeholder-link {
-  text-decoration: none;
-  color: inherit;
-  display: flex;
-  align-items: center;
-}
 
 /* 💡 新增：移动端极简 𝕏 侧边抽屉菜单样式 (适配手机触控体验) */
 .mobile-drawer-backdrop {

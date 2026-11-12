@@ -11,7 +11,9 @@ const routes = [
   { path: '/', redirect: '/dashboard' },
   { path: '/dashboard', name: 'Dashboard', component: DashboardView, meta: { requiresAuth: true } },
   { path: '/questions', name: 'Questions', component: QuestionsView, meta: { requiresAuth: true } },
-  { path: '/users', name: 'Users', component: UsersView, meta: { requiresAuth: true } }
+  { path: '/users', name: 'Users', component: UsersView, meta: { requiresAuth: true } },
+  // 兜底：未知路由统一回到后台首页
+  { path: '/:pathMatch(.*)*', redirect: '/dashboard' }
 ]
 
 const router = createRouter({

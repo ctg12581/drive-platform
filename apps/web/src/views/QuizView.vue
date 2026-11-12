@@ -149,6 +149,8 @@ const startChallenge = async (quizInfo) => {
     const data = await res.json()
     if (res.ok && data.has_quiz) {
       activeChallengeQuiz.value = data
+      // 清空上一份测验残留的答题记录，避免跨测验误判“已答完”
+      Object.keys(challengeAnswers).forEach((key) => delete challengeAnswers[key])
       data.questions.forEach(q => {
         challengeAnswers[q.id] = null // 强制不默认选中
       })

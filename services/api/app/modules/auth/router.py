@@ -14,12 +14,15 @@ class UserAuthSchema(BaseModel):
 
 
 class ProfileUpdateSchema(BaseModel):
-    nickname: str = Field(..., max_length=20)
-    avatar_url: str = Field(...)
+    nickname: str = Field(..., min_length=1, max_length=20)
+    avatar_url: str = Field(..., max_length=2048)
 
 
 @router.post("/register")
 async def register(user: UserAuthSchema):
+    # 'admin' 为系统保留账号，禁止通过公开注册抢占（管理员由 ADMIN_PASSWORD 引导）
+    if user.username.lower() == "admin":
+        raise HTTPException(status_code=400, detail="该用户名为系统保留，无法注册")
     with db_cursor(commit=True) as cur:
         cur.execute("SELECT id FROM users WHERE username = %s", (user.username,))
         if cur.fetchone():

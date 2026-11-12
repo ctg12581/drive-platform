@@ -47,7 +47,12 @@ import { ref, onMounted } from 'vue'
 import { apiFetch } from '../utils/api'
 
 const loading = ref(true)
-const stats = ref(null)
+const stats = ref({
+  total_users: 0,
+  total_moments: 0,
+  total_questions: 0,
+  total_attempts: 0,
+})
 
 onMounted(() => {
   fetchDashboardStats()
@@ -57,8 +62,8 @@ const fetchDashboardStats = async () => {
   try {
     const res = await apiFetch('/admin/dashboard/stats')
     const data = await res.json()
-    if (res.ok) {
-      stats.value = data.stats
+    if (res.ok && data.stats) {
+      stats.value = { ...stats.value, ...data.stats }
     }
   } catch {
     console.error('获取大盘数据失败')

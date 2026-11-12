@@ -27,7 +27,15 @@ services:
       - key: JWT_SECRET
         sync: false
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
-        value: "525600"
+        value: "10080"
+      - key: ADMIN_USERNAME
+        value: "admin"
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: DB_POOL_MAX_CONN
+        value: "10"
+      - key: MAX_UPLOAD_BYTES
+        value: "5242880"
       - key: FRONTEND_ORIGINS
         sync: false
       - key: R2_ACCOUNT_ID
