@@ -1,6 +1,7 @@
 # app/main.py
 """DRIVE Space 多模块平台 FastAPI 应用入口。"""
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,17 +15,31 @@ from app.modules.auth.router import router as auth_router
 from app.modules.chat.router import router as chat_router
 from app.modules.drive.router import router as drive_router
 from app.modules.moments.router import router as moments_router
+from app.modules.news.crawler import crawl_loop
+from app.modules.news.router import router as news_router
 from app.modules.quiz.router import router as quiz_router
 from app.modules.search.router import router as search_router
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    """应用启动时创建连接池并初始化数据库表结构，退出时关闭连接池。"""
+    """应用启动时创建连接池并初始化表结构，同时拉起热点新闻定时爬虫；退出时清理。"""
     await init_pool()
     await init_global_tables()
-    yield
-    await close_pool()
+
+    # 后台定时爬取热点新闻（可通过 NEWS_CRAWL_ENABLED 关闭）
+    crawl_task: asyncio.Task | None = None
+    if settings.NEWS_CRAWL_ENABLED:
+        crawl_task = asyncio.create_task(crawl_loop())
+
+    try:
+        yield
+    finally:
+        if crawl_task is not None:
+            crawl_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await crawl_task
+        await close_pool()
 
 
 app = FastAPI(title="DRIVE Space Multi-Feature Platform", lifespan=lifespan)
@@ -61,6 +76,7 @@ app.include_router(auth_router)
 app.include_router(drive_router)
 app.include_router(chat_router)
 app.include_router(moments_router)
+app.include_router(news_router)
 app.include_router(search_router)
 app.include_router(quiz_router)
 app.include_router(admin_router)

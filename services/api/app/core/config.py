@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     # 图片上传大小上限（字节），默认 5MB
     MAX_UPLOAD_BYTES: int = 5 * 1024 * 1024
 
+    # 热点新闻定时爬取：是否启用，以及抓取间隔（分钟）
+    NEWS_CRAWL_ENABLED: bool = True
+    NEWS_CRAWL_INTERVAL_MINUTES: int = 15
+
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE),
         extra="ignore",

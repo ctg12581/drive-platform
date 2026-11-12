@@ -100,6 +100,7 @@ _TIMESTAMP_COLUMNS = [
     ("user_quizzes", "created_at"),
     ("user_quiz_questions", "created_at"),
     ("quiz_attempts", "created_at"),
+    ("hot_news", "fetched_at"),
 ]
 
 
@@ -230,6 +231,23 @@ SCHEMA_STATEMENTS = [
         UNIQUE(quiz_id, respondent_username)
     );
     """,
+    # 热点新闻：由后台定时爬虫整表刷新为最新快照
+    """
+    CREATE TABLE IF NOT EXISTS hot_news (
+        id SERIAL PRIMARY KEY,
+        source VARCHAR(50) NOT NULL,
+        kind VARCHAR(10) DEFAULT 'rank',
+        category VARCHAR(30) DEFAULT '热点',
+        title TEXT NOT NULL,
+        summary TEXT DEFAULT '',
+        url TEXT DEFAULT '',
+        hot BIGINT DEFAULT 0,
+        external_id VARCHAR(200) DEFAULT '',
+        rank_index INT DEFAULT 0,
+        fetched_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
+    """,
+    "ALTER TABLE hot_news ADD COLUMN IF NOT EXISTS kind VARCHAR(10) DEFAULT 'rank';",
     "CREATE INDEX IF NOT EXISTS idx_chat_messages_sender_receiver ON chat_messages (sender, receiver);",
     "CREATE INDEX IF NOT EXISTS idx_chat_messages_receiver_unread ON chat_messages (receiver, is_read);",
     "CREATE INDEX IF NOT EXISTS idx_friendships_username ON friendships (username);",
@@ -241,6 +259,8 @@ SCHEMA_STATEMENTS = [
     "CREATE INDEX IF NOT EXISTS idx_quiz_attempts_respondent ON quiz_attempts (respondent_username);",
     "CREATE INDEX IF NOT EXISTS idx_drive_records_username ON drive_records (username);",
     "CREATE INDEX IF NOT EXISTS idx_user_quiz_questions_quiz ON user_quiz_questions (quiz_id);",
+    "CREATE INDEX IF NOT EXISTS idx_hot_news_fetched_at ON hot_news (fetched_at DESC);",
+    "CREATE INDEX IF NOT EXISTS idx_hot_news_category ON hot_news (category);",
 ] + [_timestamp_migration_sql(t, c) for t, c in _TIMESTAMP_COLUMNS]
 
 
