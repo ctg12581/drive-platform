@@ -508,6 +508,33 @@ watch(
   },
 )
 
+// 断线重连 / 回到前台后，补拉当前会话历史，避免断线期间的消息漏显示
+const resyncActiveHistory = async () => {
+  const friend = selectedContact.value
+  if (!friend) return
+  try {
+    const res = await apiFetch(`/chat/history/${friend}`)
+    const data = await res.json()
+    if (!res.ok || selectedContact.value !== friend) return
+    const localizedHistory = data.history.map((msg) => ({
+      ...msg,
+      time: formatLocalTime(msg.time),
+    }))
+    chatStore.setHistory(friend, localizedHistory)
+    chatStore.activeMessages = [...localizedHistory]
+    if (chatFlowNearBottom.value) scrollToBottom()
+  } catch (err) {
+    console.error('重连后同步聊天历史失败:', err)
+  }
+}
+
+watch(
+  () => chatStore.resyncTick,
+  () => {
+    resyncActiveHistory()
+  },
+)
+
 const getCurrentTimeLabel = () => {
   const now = new Date()
   return `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`

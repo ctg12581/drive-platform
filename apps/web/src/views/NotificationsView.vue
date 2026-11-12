@@ -43,7 +43,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { isUrl } from '@drive/shared'
 import { useChatStore } from '../store/chat'
 import { apiFetch } from '../utils/api'
@@ -53,6 +53,12 @@ const requests = ref([])
 
 onMounted(() => {
   fetchPendingRequests()
+  // 服务端通过 WebSocket 推送好友申请变化时，实时刷新列表（替代轮询）
+  window.addEventListener('chat:friend-requests-changed', fetchPendingRequests)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('chat:friend-requests-changed', fetchPendingRequests)
 })
 
 const fetchPendingRequests = async () => {

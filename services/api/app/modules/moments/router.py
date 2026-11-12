@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from app.core.db import db_conn, db_transaction
 from app.core.timeutil import to_iso_utc
 from app.modules.auth.service import get_current_user
+from app.modules.chat.router import manager
 
 router = APIRouter(prefix="/moments", tags=["Moments 动态广场与主页信息流"])
 
@@ -40,6 +41,13 @@ async def create_moment(data: MomentCreateSchema, current_user: dict = Depends(g
             current_user["username"],
             data.content.strip(),
         )
+    # 实时广播“有新动态”，替代首页 15s 轮询（排除发帖者本人）
+    try:
+        await manager.broadcast(
+            {"type": "new_moments", "count": 1}, exclude={current_user["username"]}
+        )
+    except Exception:  # noqa: BLE001 - 广播失败不影响发布结果
+        pass
     return {"success": True, "message": "动态发布成功"}
 
 

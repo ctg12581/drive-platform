@@ -83,6 +83,8 @@ async def add_friend(data: AddFriendSchema, current_user: dict = Depends(get_cur
             username,
             friend,
         )
+    # 实时通知对方有新好友申请（替代前端 20s 轮询）
+    await manager.send_to_user(friend, {"type": "friend_request", "from": username})
     return {"success": True, "message": "好友申请已发送，等待对方审核"}
 
 
@@ -117,6 +119,8 @@ async def accept_friend_request(data: AcceptFriendSchema, current_user: dict = D
         await conn.execute(
             "UPDATE friendships SET status = 'accepted' WHERE id = $1", data.request_id
         )
+    # 实时通知申请人：对方已同意，刷新好友申请（对方无需再轮询）
+    await manager.send_to_user(row[0], {"type": "friend_accept", "by": current_user["username"]})
     return {"success": True, "message": "已同意好友请求，你们现在是好友了"}
 
 
@@ -148,6 +152,8 @@ async def delete_friend(data: DeleteFriendSchema, current_user: dict = Depends(g
             )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"解除好友异常: {exc}") from exc
+    # 实时通知对方刷新好友列表
+    await manager.send_to_user(friend, {"type": "friend_update", "from": username})
     return {"success": True, "message": f"已成功与 @{friend} 解除好友关系（历史聊天记录已为您保留）"}
 
 
@@ -388,6 +394,14 @@ class ConnectionManager:
             except Exception:  # noqa: BLE001 - 单个连接异常不影响其它连接
                 pass
 
+    async def broadcast(self, payload: dict, exclude=None):
+        """向所有在线用户广播；exclude 可传入用户名集合（如发帖者本人）。"""
+        skip = exclude or set()
+        for uname in list(self.active_connections.keys()):
+            if uname in skip:
+                continue
+            await self.send_to_user(uname, payload)
+
     async def send_direct_message(self, message: str, sender: str, receiver: str) -> int | None:
         """落库并转发给接收方；非好友或写入失败返回 None。"""
         try:
@@ -445,6 +459,11 @@ async def websocket_endpoint(websocket: WebSocket, username: str, token: str = "
             data = await websocket.receive_json()
             msg_type = data.get("type", "msg")
             target_user = data.get("to")
+
+            if msg_type == "ping":
+                # 客户端心跳探活：原样回 pong，用于发现半开连接
+                await websocket.send_json({"type": "pong"})
+                continue
 
             if msg_type == "msg":
                 msg = data.get("message")

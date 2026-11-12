@@ -2,12 +2,18 @@
 // 全局聊天状态：好友列表、历史消息缓存、常驻 WebSocket 与未读数。
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { readJSON, writeJSON, isImageUrl } from '@drive/shared'
+import { readJSON, writeJSON, isImageUrl, isTokenExpired } from '@drive/shared'
 import { useAuthStore } from './auth'
 import { apiFetch, buildChatWsUrl } from '../utils/api'
 
-const PENDING_POLL_INTERVAL = 20000
-const RECONNECT_DELAY = 5000
+// 好友申请改为服务端 WS 推送；这里的轮询仅作“断线期间”的低频兜底
+const PENDING_POLL_INTERVAL = 60000
+// 断线重连：指数退避（1s 起，最长 30s），并加抖动避免多端同时重连打爆后端
+const RECONNECT_BASE_DELAY = 1000
+const RECONNECT_MAX_DELAY = 30000
+// 心跳：每 25s 发一次 ping；服务端支持 pong 时，10s 内没回就判定连接已死
+const HEARTBEAT_INTERVAL = 25000
+const HEARTBEAT_TIMEOUT = 10000
 
 // localStorage 写入防抖：高频聊天时避免每次都同步序列化整个缓存对象
 const writeTimers = {}
@@ -42,10 +48,19 @@ export const useChatStore = defineStore('chat', () => {
   const connected = ref(false)
   const activeMessages = ref([])
   const pendingRequestsCount = ref(0)
+  // 连接建立/回到前台时自增，聊天页据此补拉当前会话历史
+  const resyncTick = ref(0)
 
   let pendingPollTimer = null
   let reconnectTimer = null
   let manualClose = false
+  let reconnectAttempts = 0
+  let heartbeatTimer = null
+  let pongTimeoutTimer = null
+  let wakeUpBound = false
+  let hasConnectedOnce = false
+  let serverSupportsPong = false
+  let lastWakeSyncAt = 0
 
   const totalUnreadCount = computed(() =>
     cachedFriends.value.reduce((sum, friend) => sum + (friend.unread || 0), 0),
@@ -97,6 +112,12 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  function notifyFriendRequestsChanged() {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('chat:friend-requests-changed'))
+    }
+  }
+
   function stopPendingPoll() {
     if (pendingPollTimer) {
       clearInterval(pendingPollTimer)
@@ -104,33 +125,145 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  function stopHeartbeat() {
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer)
+      heartbeatTimer = null
+    }
+    if (pongTimeoutTimer) {
+      clearTimeout(pongTimeoutTimer)
+      pongTimeoutTimer = null
+    }
+  }
+
+  function startHeartbeat() {
+    stopHeartbeat()
+    heartbeatTimer = setInterval(() => {
+      if (!ws.value || !connected.value) return
+      sendWebSocketPayload({ type: 'ping' })
+      if (pongTimeoutTimer) clearTimeout(pongTimeoutTimer)
+      pongTimeoutTimer = setTimeout(() => {
+        // 老服务端不支持 pong 时不误判；确认支持后再以“无 pong”判定半开连接
+        if (!serverSupportsPong) return
+        console.warn('聊天心跳超时，主动断开以触发重连')
+        try {
+          if (ws.value) ws.value.close()
+        } catch {
+          /* ignore */
+        }
+      }, HEARTBEAT_TIMEOUT)
+    }, HEARTBEAT_INTERVAL)
+  }
+
   function scheduleReconnect() {
     if (reconnectTimer || manualClose || !authStore.isLoggedIn) return
+    const attempt = reconnectAttempts++
+    const base = Math.min(RECONNECT_MAX_DELAY, RECONNECT_BASE_DELAY * 2 ** attempt)
+    // 抖动：80%~120%，避免多端同时重连
+    const delay = Math.round(base * (0.8 + Math.random() * 0.4))
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null
       connectWebSocket()
-    }, RECONNECT_DELAY)
+    }, delay)
+  }
+
+  // 回到前台 / 网络恢复：连接没了就重连；还在连接就触发一次补偿拉取，防止后台漏收
+  function handleWakeUp() {
+    if (typeof document !== 'undefined' && document.hidden) return
+    if (!authStore.isLoggedIn) return
+    if (!ws.value) {
+      connectWebSocket()
+    } else if (connected.value) {
+      // 20s 内只补偿一次，避免频繁切标签页造成重复请求
+      const now = Date.now()
+      if (now - lastWakeSyncAt < 20000) return
+      lastWakeSyncAt = now
+      fetchFriends()
+      fetchPendingRequestsCount()
+      resyncTick.value++
+    }
+  }
+
+  function bindWakeUpListeners() {
+    if (wakeUpBound || typeof window === 'undefined') return
+    wakeUpBound = true
+    window.addEventListener('online', handleWakeUp)
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleWakeUp)
+    }
   }
 
   function connectWebSocket() {
     if (!authStore.username || ws.value) return
+    bindWakeUpListeners()
+
+    // token 已过期就没必要再连（否则会陷入无效重连），直接登出
+    if (authStore.token && isTokenExpired(authStore.token)) {
+      manualClose = true
+      authStore.logout()
+      return
+    }
 
     manualClose = false
     ws.value = new WebSocket(buildChatWsUrl(authStore.username))
 
     ws.value.onopen = () => {
       connected.value = true
+      reconnectAttempts = 0
+      serverSupportsPong = false
+      startHeartbeat()
       fetchPendingRequestsCount()
       fetchFriends()
       stopPendingPoll()
-      pendingPollTimer = setInterval(fetchPendingRequestsCount, PENDING_POLL_INTERVAL)
+      pendingPollTimer = setInterval(() => {
+        // 连接正常时由服务端推送好友申请，无需轮询；仅在断线时低频兜底
+        if (!connected.value) fetchPendingRequestsCount()
+      }, PENDING_POLL_INTERVAL)
       if (activeContact.value) {
         sendWebSocketPayload({ type: 'read', to: activeContact.value })
+      }
+      // 非首次连接（重连）成功后，通知聊天页补拉当前会话历史，防止断线期间漏消息
+      if (hasConnectedOnce) {
+        resyncTick.value++
+      } else {
+        hasConnectedOnce = true
       }
     }
 
     ws.value.onmessage = (event) => {
       const data = JSON.parse(event.data)
+
+      // 心跳应答：证明连接仍然存活
+      if (data.type === 'pong') {
+        serverSupportsPong = true
+        if (pongTimeoutTimer) {
+          clearTimeout(pongTimeoutTimer)
+          pongTimeoutTimer = null
+        }
+        return
+      }
+
+      // 好友申请 / 关系变化：服务端主动推送，实时更新未读数与列表（替代轮询）
+      if (
+        data.type === 'friend_request' ||
+        data.type === 'friend_accept' ||
+        data.type === 'friend_update'
+      ) {
+        fetchPendingRequestsCount()
+        if (data.type !== 'friend_request') fetchFriends()
+        notifyFriendRequestsChanged()
+        return
+      }
+
+      // 有新动态发布：通知首页更新“新动态”气泡（替代首页 15s 轮询）
+      if (data.type === 'new_moments') {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('moments:new', { detail: Number(data.count) || 1 }),
+          )
+        }
+        return
+      }
 
       // 服务端确认消息已落库：回填真实 id，使刚发出的消息也能撤回
       if (data.type === 'msg_ack') {
@@ -210,10 +343,17 @@ export const useChatStore = defineStore('chat', () => {
       }
     }
 
-    ws.value.onclose = () => {
+    ws.value.onclose = (event) => {
       connected.value = false
       ws.value = null
+      stopHeartbeat()
       stopPendingPoll()
+      // 1008：鉴权/策略失败（如 token 失效），重连无法恢复，直接登出停止重连
+      if (event && event.code === 1008) {
+        manualClose = true
+        authStore.logout()
+        return
+      }
       if (!manualClose) {
         scheduleReconnect()
       }
@@ -222,6 +362,8 @@ export const useChatStore = defineStore('chat', () => {
 
   function disconnectWebSocket() {
     manualClose = true
+    reconnectAttempts = 0
+    stopHeartbeat()
     stopPendingPoll()
     if (reconnectTimer) {
       clearTimeout(reconnectTimer)
@@ -312,6 +454,7 @@ export const useChatStore = defineStore('chat', () => {
     activeMessages,
     totalUnreadCount,
     pendingRequestsCount,
+    resyncTick,
     setFriends,
     setHistory,
     setActiveContact,
