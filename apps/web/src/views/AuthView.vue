@@ -281,19 +281,14 @@ const handleLogout = () => {
 .profile-hero-card {
   display: flex; flex-direction: column; align-items: center; padding: 24px 16px; border-bottom: 1px solid var(--x-border); text-align: center;
 }
-@media (min-width: 500px) {
-  .profile-hero-card { flex-direction: row; text-align: left; gap: 24px; }
-}
 .profile-avatar-big {
   width: 80px; height: 80px; background: #ffffff; border: 1px solid var(--x-border); border-radius: 50%; font-size: 2.5rem; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 12px;
 }
-@media (min-width: 500px) { .profile-avatar-big { margin-bottom: 0; } }
 
 .profile-meta-info { flex: 1; display: flex; flex-direction: column; }
 .profile-nickname { margin: 0; font-size: 1.5rem; font-weight: 800; color: var(--x-text-main); }
 .profile-handle { margin: 4px 0 16px 0; color: var(--x-text-gray); font-size: 1rem; }
 .profile-actions-row { display: flex; gap: 12px; justify-content: center; }
-@media (min-width: 500px) { .profile-actions-row { justify-content: flex-start; } }
 
 /* 扁平化丸子按钮 */
 .x-btn-pill-light {

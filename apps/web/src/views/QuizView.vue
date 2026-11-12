@@ -201,7 +201,6 @@ const submitChallenge = async () => {
 .owner-card { border-radius: 16px; padding: 20px; text-align: center; box-sizing: border-box; }
 .owner-card.no-quiz { background: #fff5f5; border: 1px dashed #fda4af; }
 .owner-card.has-quiz { background: #ffffff; border: 1px solid var(--x-border); display: flex; flex-direction: column; align-items: center; justify-content: space-between; gap: 12px; }
-@media (min-width: 500px) { .owner-card.has-quiz { flex-direction: row; text-align: left; } }
 .has-quiz-left { display: flex; align-items: center; gap: 12px; }
 .heart-avatar { width: 44px; height: 44px; background: #fff5f5; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; }
 .quiz-meta-info { display: flex; flex-direction: column; text-align: left; }

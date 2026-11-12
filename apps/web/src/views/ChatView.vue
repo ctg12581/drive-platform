@@ -504,9 +504,6 @@ const getCurrentTimeLabel = () => {
   height: calc(100vh - 106px);
   width: 100%;
 }
-@media (min-width: 768px) {
-  .x-dm-layout { height: calc(100vh - 24px); }
-}
 
 /* 左侧联系人列表 */
 .contacts-sidebar {
@@ -744,17 +741,10 @@ const getCurrentTimeLabel = () => {
 .modal-tweet-time { font-size: 0.8rem; color: var(--x-text-gray); margin-bottom: 4px; }
 .modal-tweet-content { font-size: 0.95rem; line-height: 1.4; word-wrap: break-word;}
 
-/* 双端自适应 */
-@media (max-width: 767px) {
-  .contacts-sidebar.hide-on-mobile { display: none !important; }
-  .chat-main.hide-on-mobile { display: none !important; }
-  .btn-back { display: block !important; }
-}
-@media (min-width: 768px) {
-  .contacts-sidebar { width: 280px; }
-  .chat-main { flex: 1; }
-  .btn-back { display: none !important; }
-}
+/* 移动端单栏：始终只显示联系人列表或聊天窗口之一 */
+.contacts-sidebar.hide-on-mobile { display: none !important; }
+.chat-main.hide-on-mobile { display: none !important; }
+.btn-back { display: block !important; }
 
 .btn-profile-delete {
   background: transparent;

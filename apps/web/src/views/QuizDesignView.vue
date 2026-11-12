@@ -395,9 +395,6 @@ const publishMyQuiz = async () => {
   background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(12px);
   border-top: 1px solid var(--x-border); padding: 12px 16px; z-index: 20;
 }
-@media (min-width: 768px) {
-  .design-footer { bottom: 0; left: calc((100% - 600px) / 2 + 138px); width: 600px; box-sizing: border-box; }
-}
 .btn-publish {
   width: 100%; height: 44px; background: #0f1419; color: white; border: none;
   border-radius: 9999px; font-weight: bold; font-size: 1rem; cursor: pointer; transition: background 0.2s;

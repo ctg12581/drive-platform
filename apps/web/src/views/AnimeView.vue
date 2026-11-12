@@ -177,11 +177,6 @@ onMounted(fetchList)
   grid-template-columns: 1fr;
   gap: 12px;
 }
-@media (min-width: 640px) {
-  .anime-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-}
 .anime-card {
   display: flex;
   align-items: center;

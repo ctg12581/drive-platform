@@ -123,13 +123,6 @@ const handleAction = async (requestId, action) => {
   border-bottom: 1px solid var(--x-border);
   gap: 16px;
 }
-@media (min-width: 500px) {
-  .notify-card {
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-  }
-}
 
 .notify-card-left {
   display: flex;
