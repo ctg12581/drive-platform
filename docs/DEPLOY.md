@@ -61,7 +61,8 @@ Settings 对齐：
 | `JWT_SECRET` | JWT 签名密钥 |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | 可选，默认 `10080`（7 天） |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 初始管理员引导：库中无管理员时用其创建/提升管理员；生产务必设强密码 |
-| `DB_POOL_MAX_CONN` | 可选，连接池上限，默认 `10` |
+| `DB_POOL_MAX_CONN` | 可选，连接池上限，默认 `20` |
+| `DB_STATEMENT_CACHE_SIZE` | asyncpg 语句缓存，直连 Neon 用默认 `100`；用 `-pooler`/pgbouncer 时设为 `0` |
 | `MAX_UPLOAD_BYTES` | 可选，图片上传上限，默认 5MB |
 | `FRONTEND_ORIGINS` | 可选，额外允许的前端来源，逗号分隔 |
 | `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | Cloudflare R2 凭据 |

@@ -33,7 +33,9 @@ services:
       - key: ADMIN_PASSWORD
         sync: false
       - key: DB_POOL_MAX_CONN
-        value: "10"
+        value: "20"
+      - key: DB_STATEMENT_CACHE_SIZE
+        value: "100"
       - key: MAX_UPLOAD_BYTES
         value: "5242880"
       - key: FRONTEND_ORIGINS

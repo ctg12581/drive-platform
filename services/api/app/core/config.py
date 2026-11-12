@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     DB_POOL_MAX_CONN: int = 20
     # 单条 SQL 超时（毫秒），防止慢查询长期占用连接
     DB_STATEMENT_TIMEOUT_MS: int = 15000
+    # asyncpg 预编译语句缓存大小（asyncpg 默认 100）。
+    # 若使用 pgbouncer / Neon 的 -pooler 连接串（事务池模式），必须设为 0，否则会报
+    # "prepared statement ... already exists"。直连 Neon 主库保持默认即可。
+    DB_STATEMENT_CACHE_SIZE: int = 100
 
     # 逗号分隔的额外允许跨域来源，追加到内置白名单之后
     FRONTEND_ORIGINS: str = ""

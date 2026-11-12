@@ -32,6 +32,7 @@ async def init_pool():
                 min_size=1,
                 max_size=max(1, settings.DB_POOL_MAX_CONN),
                 command_timeout=settings.DB_STATEMENT_TIMEOUT_MS / 1000,
+                statement_cache_size=max(0, settings.DB_STATEMENT_CACHE_SIZE),
                 init=_init_connection,
             )
 
