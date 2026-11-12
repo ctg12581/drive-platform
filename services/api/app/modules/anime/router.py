@@ -1,239 +1,207 @@
 # app/modules/anime/router.py
-# 动漫人物介绍模块：内置一批「经典 + 热门」混合的动漫角色资料，
-# 提供列表与详情只读接口，公开访问，无需登录鉴权。
-from fastapi import APIRouter, HTTPException
+# 动漫人物图鉴模块：读取后台爬虫（AniList 日/国漫 + TVmaze 美漫）落库的快照 anime_characters，
+# 提供列表（关键词 / 地区 / 作品筛选）、地区汇总、作品分类与详情只读接口，公开访问，无需登录鉴权。
+# 表为空或数据库不可用时返回空结果（数据由定时爬虫负责填充），不再内置硬编码兜底数据。
+import json
 
-router = APIRouter(prefix="/anime", tags=["Anime 动漫人物介绍"])
+from fastapi import APIRouter, HTTPException, Query
 
-# 内置动漫人物资料库（经典 + 热门混合）
-ANIME_CHARACTERS = [
-    {
-        "id": 1,
-        "name": "漩涡鸣人",
-        "name_en": "Naruto Uzumaki",
-        "work": "火影忍者",
-        "work_en": "Naruto",
-        "avatar": "🍥",
-        "tags": ["热血", "励志", "忍者"],
-        "voice_actor": "竹内顺子",
-        "personality": "执着、乐观、永不放弃",
-        "introduction": (
-            "木叶隐村的忍者，体内封印着九尾妖狐。从小被村民排挤，却始终怀揣成为火影的梦想。"
-            "他以超乎常人的毅力和行动力，一步步赢得认可，最终继承火之意志，成为受人爱戴的第七代火影。"
-        ),
-        "quote": "\"说到做到，就是我的忍道！\""
-    },
-    {
-        "id": 2,
-        "name": "毛利小五郎",
-        "name_en": "Kogoro Mouri",
-        "work": "名侦探柯南",
-        "work_en": "Detective Conan",
-        "avatar": "🕵️",
-        "tags": ["推理", "侦探", "大叔"],
-        "voice_actor": "神谷明 / 小山力也",
-        "personality": "表面糊涂、关键时可靠",
-        "introduction": (
-            "东京著名的私人侦探，人称\"沉睡的小五郎\"。看似大大咧咧、嗜酒爱赌，"
-            "但办案时往往在睡梦中\"灵光一现\"道破真相。是毛利兰的父亲，也是柯南的\"破案替身\"。"
-        ),
-        "quote": "\"真相只有一个...??\""
-    },
-    {
-        "id": 3,
-        "name": "樱木花道",
-        "name_en": "Hanamichi Sakuragi",
-        "work": "灌篮高手",
-        "work_en": "Slam Dunk",
-        "avatar": "🏀",
-        "tags": ["运动", "篮球", "热血"],
-        "voice_actor": "草尾毅",
-        "personality": "自信爆棚、天赋异禀、不服输",
-        "introduction": (
-            "湘北高中篮球队的\"天才\"前锋，原是问题少年，为了追女孩加入篮球部。"
-            "凭借惊人的弹跳力与学习能力，从门外汉成长为球队不可或缺的篮板王，"
-            "用热血与汗水诠释了\"篮球人生\"。"
-        ),
-        "quote": "\"我是天才，哈哈哈哈哈！\""
-    },
-    {
-        "id": 4,
-        "name": "碇真嗣",
-        "name_en": "Shinji Ikari",
-        "work": "新世纪福音战士",
-        "work_en": "Neon Genesis Evangelion",
-        "avatar": "🤖",
-        "tags": ["机战", "心理", "哲学"],
-        "voice_actor": "绪方惠美",
-        "personality": "内向、敏感、渴望被认可",
-        "introduction": (
-            "EVA 初号机驾驶员，性格内向而敏感，被父亲召唤驾驶 EVA 对抗使徒。"
-            "他不断在逃避与现实之间挣扎，其复杂的心路历程成为 EVA 这部充满哲学思辨作品的核心。"
-        ),
-        "quote": "\"不能逃避，不能逃避，不能逃避！\""
-    },
-    {
-        "id": 5,
-        "name": "路飞",
-        "name_en": "Monkey D. Luffy",
-        "work": "海贼王",
-        "work_en": "One Piece",
-        "avatar": "🏴‍☠️",
-        "tags": ["冒险", "热血", "伙伴"],
-        "voice_actor": "田中真弓",
-        "personality": "自由、纯粹、重情重义",
-        "introduction": (
-            "草帽海贼团船长，橡胶果实能力者，梦想成为海贼王。他天真自由、毫无心机，"
-            "却对伙伴极度重视，为了他们可以不惜一切。一路航行，集结伙伴，追逐\"ONE PIECE\"。"
-        ),
-        "quote": "\"我是要成为海贼王的男人！\""
-    },
-    {
-        "id": 6,
-        "name": "龙猫小月与小梅",
-        "name_en": "Satsuki & Mei Kusakabe",
-        "work": "龙猫",
-        "work_en": "My Neighbor Totoro",
-        "avatar": "🌳",
-        "tags": ["治愈", "奇幻", "童年"],
-        "voice_actor": "坂本千夏 / 重井船人",
-        "personality": "天真烂漫、充满好奇心",
-        "introduction": (
-            "《龙猫》中搬去乡下居住的两姐妹。妹妹小梅天真烂漫，发现了森林里的龙猫；"
-            "姐姐小月则懂事坚强。她们的故事讲述了大自然与童年的纯真美好，是吉卜力最治愈的经典。"
-        ),
-        "quote": "\"龙猫巴士，快来接我们吧！\""
-    },
-    {
-        "id": 7,
-        "name": "五条悟",
-        "name_en": "Satoru Gojo",
-        "work": "咒术回战",
-        "work_en": "Jujutsu Kaisen",
-        "avatar": "🕶️",
-        "tags": ["战斗", "咒术", "最强"],
-        "voice_actor": "中村悠一",
-        "personality": "强大自信、玩世不恭、护短",
-        "introduction": (
-            "东京咒术高专教师，被称作\"现代最强的咒术师\"，拥有\"无下限术式\"与\"六眼\"。"
-            "外表轻佻爱玩，实则实力深不可测，对弟子们倾注心血，是咒术界公认的顶尖存在。"
-        ),
-        "quote": "\"全盛期，我当定了你的老师。\""
-    },
-    {
-        "id": 8,
-        "name": "三笠·阿克曼",
-        "name_en": "Mikasa Ackerman",
-        "work": "进击的巨人",
-        "work_en": "Attack on Titan",
-        "avatar": "⚔️",
-        "tags": ["战斗", "立体机动", "守护"],
-        "voice_actor": "石川由依",
-        "personality": "冷静、坚韧、守护型",
-        "introduction": (
-            "调查兵团士兵，阿克曼家族的末裔，拥有超人般的战斗天赋。"
-            "她外表冷峻，内心却无比珍视家人般的存在，一生都在为了守护重要之人而战斗。"
-        ),
-        "quote": "\"只要我还活着，就一定会保护你。\""
-    },
-    {
-        "id": 9,
-        "name": "灶门炭治郎",
-        "name_en": "Tanjiro Kamado",
-        "work": "鬼灭之刃",
-        "work_en": "Demon Slayer",
-        "avatar": "🗡️",
-        "tags": ["热血", "亲情", "除恶"],
-        "voice_actor": "花江夏树",
-        "personality": "温柔、坚韧、充满同理心",
-        "introduction": (
-            "善良温柔的少年，一家惨遭鬼杀后，肩负起让变成鬼的妹妹祢豆子恢复人身的使命。"
-            "他手持日之呼吸，加入鬼杀队，在斩鬼之路上对敌人也抱持着悲悯，是鬼灭之刃的灵魂人物。"
-        ),
-        "quote": "\"一起变强，绝不放弃。\""
-    },
-    {
-        "id": 10,
-        "name": "利威尔·阿克曼",
-        "name_en": "Levi Ackerman",
-        "work": "进击的巨人",
-        "work_en": "Attack on Titan",
-        "avatar": "🪓",
-        "tags": ["战斗", "兵长", "洁癖"],
-        "voice_actor": "神谷浩史",
-        "personality": "冷酷、强大、外冷内热",
-        "introduction": (
-            "调查兵团特别作战班班长，被称为\"人类最强士兵\"。拥有无解的立体机动战斗技巧，"
-            "外表冷酷寡言、有严重洁癖，实则内心珍视部下与同伴，是战场上最可靠的领袖。"
-        ),
-        "quote": "\"选择吧，后悔你的人生，或者认同你的人生。\""
-    },
-    {
-        "id": 11,
-        "name": "小智",
-        "name_en": "Ash Ketchum",
-        "work": "宝可梦",
-        "work_en": "Pokémon",
-        "avatar": "⚡",
-        "tags": ["冒险", "伙伴", "成长"],
-        "voice_actor": "松本梨香",
-        "personality": "热情、勇敢、与宝可梦心灵相通",
-        "introduction": (
-            "真新镇出身、梦想成为宝可梦大师的少年训练家。他与皮卡丘结下深厚羁绊，"
-            "一路旅行挑战各地道馆，结识伙伴，在无数对战中不断成长，陪伴了无数观众的童年。"
-        ),
-        "quote": "\"皮卡丘，就决定是你了！\""
-    },
-    {
-        "id": 12,
-        "name": "芙莉莲",
-        "name_en": "Frieren",
-        "work": "葬送的芙莉莲",
-        "work_en": "Frieren: Beyond Journey's End",
-        "avatar": "🧙",
-        "tags": ["奇幻", "时间", "治愈"],
-        "voice_actor": "种崎敦美",
-        "personality": "淡漠而温柔、长寿精灵",
-        "introduction": (
-            "打败魔王后继续旅行的长寿精灵魔法使。对于人类而言短暂的几十年，"
-            "对她来说转瞬即逝。她踏上一段重新理解人类、理解\"逝去\"与\"羁绊\"的追忆之旅，"
-            "是近年现象级动漫《葬送的芙莉莲》的主角。"
-        ),
-        "quote": "\"魔王，已经讨伐完成了呢。\""
-    },
-]
+from app.core.db import db_conn
 
-# 1. 获取动漫人物列表（支持按关键词 name / work 过滤）
+router = APIRouter(prefix="/anime", tags=["Anime 动漫人物图鉴"])
+
+# 地区元数据：key 用于接口过滤，name 为图鉴短标签，full 为地区全称
+REGION_META = {
+    "jp": {"name": "日漫", "full": "日本", "emoji": "🇯🇵"},
+    "cn": {"name": "国漫", "full": "中国", "emoji": "🇨🇳"},
+    "us": {"name": "美漫", "full": "美国", "emoji": "🇺🇸"},
+}
+REGION_ORDER = ["jp", "cn", "us"]
+
+
+def _match_keyword(character: dict, keyword: str) -> bool:
+    """关键词匹配：人物名 / 作品名（中英文）+ 标签，全部忽略大小写。"""
+    fields = [
+        character["name"],
+        character["name_en"],
+        character["work"],
+        character["work_en"],
+        *character.get("tags", []),
+    ]
+    return any(keyword in str(field).lower() for field in fields)
+
+
+def _build_region_summary(pool: list) -> list:
+    """按地区汇总数量，pool 为已按关键词过滤（但未按地区过滤）的角色集合。"""
+    summary = [{"key": "all", "name": "全部", "full": "全部地区", "emoji": "🌏", "count": len(pool)}]
+    for key in REGION_ORDER:
+        summary.append({
+            "key": key,
+            **REGION_META[key],
+            "count": sum(1 for c in pool if c["region"] == key),
+        })
+    return summary
+
+
+def _serialize_detail(character: dict) -> dict:
+    """详情：在原始字段上补充地区展示信息。"""
+    meta = REGION_META.get(character["region"], {})
+    return {
+        **character,
+        "region_name": meta.get("name", ""),
+        "region_full": meta.get("full", ""),
+        "region_emoji": meta.get("emoji", ""),
+    }
+
+
+def _row_to_character(row) -> dict:
+    """把 anime_characters 查询行转换为前端结构。"""
+    tags = row["tags"] or []
+    if isinstance(tags, str):
+        try:
+            tags = json.loads(tags)
+        except json.JSONDecodeError:
+            tags = []
+    return {
+        "id": row["id"],
+        "external_id": row["external_id"],
+        "region": row["region"],
+        "name": row["name"],
+        "name_en": row["name_en"] or "",
+        "work": row["work"] or "",
+        "work_en": row["work_en"] or "",
+        "avatar": row["avatar"] or "",
+        "image_url": row["image_url"] or "",
+        "tags": list(tags),
+        "voice_actor": row["voice_actor"] or "",
+        "personality": row["personality"] or "",
+        "introduction": row["introduction"] or "",
+        "quote": row["quote"] or "",
+        "source": row["source"] or "",
+        "popularity": int(row["popularity"] or 0),
+    }
+
+
+async def _load_characters() -> list[dict]:
+    """读取爬虫落库的角色快照；表为空或读库异常时返回空列表（由定时爬虫负责填充）。"""
+    try:
+        async with db_conn() as conn:
+            rows = await conn.fetch(
+                "SELECT id, external_id, region, name, name_en, work, work_en, avatar, image_url, "
+                "tags, voice_actor, personality, introduction, quote, source, popularity "
+                "FROM anime_characters ORDER BY popularity DESC, id ASC"
+            )
+        return [_row_to_character(row) for row in rows]
+    except Exception as exc:  # noqa: BLE001 - 读库失败返回空列表，不阻断接口
+        print(f"⚠️ [ANIME] 读取数据库失败: {exc}")
+        return []
+
+
+# 1. 获取动漫人物列表（支持关键词 name / work 与地区 region / 作品 work 过滤）
 @router.get("/list")
-async def get_anime_list(keyword: str = ""):
+async def get_anime_list(
+    keyword: str = Query("", description="按关键词过滤：人物 / 作品 / 标签（中英文均可）"),
+    region: str = Query("", description="按地区过滤：jp 日本 / cn 中国 / us 美国，留空返回全部"),
+    work: str = Query("", description="按动漫作品名精确过滤，留空返回全部"),
+):
     keyword = keyword.strip().lower()
-    characters = ANIME_CHARACTERS
+    region = region.strip().lower()
+    work = work.strip()
+    if region and region not in REGION_META:
+        raise HTTPException(status_code=400, detail="不支持的地区筛选")
+
+    matched = await _load_characters()
     if keyword:
-        characters = [
-            c for c in characters
-            if keyword in c["name"].lower()
-            or keyword in c["work"].lower()
-            or keyword in c["name_en"].lower()
-            or keyword in c["work_en"].lower()
-        ]
+        matched = [c for c in matched if _match_keyword(c, keyword)]
+
+    # 地区计数基于关键词过滤结果（不含地区过滤），保证切换标签时数字稳定
+    regions_summary = _build_region_summary(matched)
+
+    if region:
+        matched = [c for c in matched if c["region"] == region]
+    if work:
+        matched = [c for c in matched if c["work"] == work]
+
     # 列表返回精简字段，避免一次性传输过长介绍
-    result = [
+    characters = [
         {
             "id": c["id"],
             "name": c["name"],
             "name_en": c["name_en"],
             "work": c["work"],
+            "work_en": c["work_en"],
+            "region": c["region"],
             "avatar": c["avatar"],
+            "image_url": c.get("image_url", ""),
             "tags": c["tags"],
         }
-        for c in characters
+        for c in matched
     ]
-    return {"success": True, "total": len(result), "characters": result}
+    return {
+        "success": True,
+        "total": len(characters),
+        "regions": regions_summary,
+        "characters": characters,
+    }
 
-# 2. 获取单个动漫人物详情
+
+# 2. 获取地区汇总（供前端初始化筛选项，独立于关键词/地区过滤）
+@router.get("/regions")
+async def get_anime_regions():
+    return {"success": True, "regions": _build_region_summary(await _load_characters())}
+
+
+# 3. 按动漫作品分组（图鉴分类浏览：每部作品的角色数量 / 封面 / 地区）
+@router.get("/works")
+async def get_anime_works(
+    keyword: str = Query("", description="按关键词过滤：作品 / 人物 / 标签"),
+    region: str = Query("", description="按地区过滤：jp 日本 / cn 中国 / us 美国，留空返回全部"),
+):
+    keyword = keyword.strip().lower()
+    region = region.strip().lower()
+    if region and region not in REGION_META:
+        raise HTTPException(status_code=400, detail="不支持的地区筛选")
+
+    characters = await _load_characters()
+    if keyword:
+        characters = [c for c in characters if _match_keyword(c, keyword)]
+    if region:
+        characters = [c for c in characters if c["region"] == region]
+
+    groups: dict[tuple[str, str], dict] = {}
+    for c in characters:
+        work_name = c.get("work", "")
+        if not work_name:
+            continue
+        key = (c["region"], work_name)
+        group = groups.get(key)
+        if group is None:
+            meta = REGION_META.get(c["region"], {})
+            group = {
+                "work": work_name,
+                "work_en": c.get("work_en", ""),
+                "region": c["region"],
+                "region_name": meta.get("name", ""),
+                "region_full": meta.get("full", ""),
+                "region_emoji": meta.get("emoji", ""),
+                "count": 0,
+                "cover": "",
+                "popularity": 0,
+            }
+            groups[key] = group
+        group["count"] += 1
+        group["popularity"] = max(group["popularity"], int(c.get("popularity") or 0))
+        if not group["cover"] and c.get("image_url"):
+            group["cover"] = c["image_url"]
+
+    works = sorted(groups.values(), key=lambda w: (w["popularity"], w["count"]), reverse=True)
+    return {"success": True, "total": len(works), "works": works}
+
+
+# 4. 获取单个动漫人物详情
 @router.get("/{character_id}")
 async def get_anime_detail(character_id: int):
-    for c in ANIME_CHARACTERS:
+    for c in await _load_characters():
         if c["id"] == character_id:
-            return {"success": True, "character": c}
+            return {"success": True, "character": _serialize_detail(c)}
     raise HTTPException(status_code=404, detail="未找到该动漫人物")

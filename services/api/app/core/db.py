@@ -101,6 +101,7 @@ _TIMESTAMP_COLUMNS = [
     ("user_quiz_questions", "created_at"),
     ("quiz_attempts", "created_at"),
     ("hot_news", "fetched_at"),
+    ("anime_characters", "fetched_at"),
 ]
 
 
@@ -252,6 +253,34 @@ SCHEMA_STATEMENTS = [
     """,
     "ALTER TABLE hot_news ADD COLUMN IF NOT EXISTS kind VARCHAR(10) DEFAULT 'rank';",
     "ALTER TABLE hot_news ADD COLUMN IF NOT EXISTS image_url TEXT DEFAULT '';",
+    # 动漫人物图鉴：由后台定时爬虫（AniList 日/国漫 + TVmaze 美漫）整表刷新为最新快照
+    """
+    CREATE TABLE IF NOT EXISTS anime_characters (
+        id SERIAL PRIMARY KEY,
+        external_id VARCHAR(80) NOT NULL,
+        region VARCHAR(8) NOT NULL,
+        name VARCHAR(120) NOT NULL,
+        name_en VARCHAR(160) DEFAULT '',
+        work VARCHAR(200) DEFAULT '',
+        work_en VARCHAR(200) DEFAULT '',
+        avatar VARCHAR(16) DEFAULT '',
+        image_url TEXT DEFAULT '',
+        tags JSONB DEFAULT '[]'::jsonb,
+        voice_actor VARCHAR(200) DEFAULT '',
+        personality TEXT DEFAULT '',
+        introduction TEXT DEFAULT '',
+        quote TEXT DEFAULT '',
+        source VARCHAR(20) DEFAULT '',
+        popularity INT DEFAULT 0,
+        fetched_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
+    """,
+    "ALTER TABLE anime_characters ADD COLUMN IF NOT EXISTS image_url TEXT DEFAULT '';",
+    "ALTER TABLE anime_characters ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT '';",
+    "ALTER TABLE anime_characters ADD COLUMN IF NOT EXISTS popularity INT DEFAULT 0;",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_anime_characters_external ON anime_characters (source, external_id);",
+    "CREATE INDEX IF NOT EXISTS idx_anime_characters_region ON anime_characters (region, popularity DESC);",
+    "CREATE INDEX IF NOT EXISTS idx_anime_characters_fetched_at ON anime_characters (fetched_at DESC);",
     "CREATE INDEX IF NOT EXISTS idx_chat_messages_sender_receiver ON chat_messages (sender, receiver);",
     "CREATE INDEX IF NOT EXISTS idx_chat_messages_receiver_unread ON chat_messages (receiver, is_read);",
     "CREATE INDEX IF NOT EXISTS idx_friendships_username ON friendships (username);",

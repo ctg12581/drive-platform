@@ -10,6 +10,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from app.core.config import settings
 from app.core.db import close_pool, init_global_tables, init_pool
 from app.modules.admin.router import router as admin_router
+from app.modules.anime.crawler import crawl_loop as anime_crawl_loop
 from app.modules.anime.router import router as anime_router
 from app.modules.auth.router import router as auth_router
 from app.modules.chat.router import router as chat_router
@@ -32,13 +33,19 @@ async def lifespan(_: FastAPI):
     if settings.NEWS_CRAWL_ENABLED:
         crawl_task = asyncio.create_task(crawl_loop())
 
+    # 后台定时爬取动漫人物图鉴（可通过 ANIME_CRAWL_ENABLED 关闭）
+    anime_crawl_task: asyncio.Task | None = None
+    if settings.ANIME_CRAWL_ENABLED:
+        anime_crawl_task = asyncio.create_task(anime_crawl_loop())
+
     try:
         yield
     finally:
-        if crawl_task is not None:
-            crawl_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await crawl_task
+        for task in (crawl_task, anime_crawl_task):
+            if task is not None:
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
         await close_pool()
 
 

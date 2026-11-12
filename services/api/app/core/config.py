@@ -47,6 +47,18 @@ class Settings(BaseSettings):
     NEWS_CRAWL_ENABLED: bool = True
     NEWS_CRAWL_INTERVAL_MINUTES: int = 15
 
+    # 动漫人物图鉴定时爬取：是否启用、抓取间隔（分钟）
+    # MAX_PER_REGION = 0 表示「不限制角色总数」，尽可能多抓；正整数则按该值截断
+    ANIME_CRAWL_ENABLED: bool = True
+    ANIME_CRAWL_INTERVAL_MINUTES: int = 360
+    ANIME_CRAWL_MAX_PER_REGION: int = 0
+    # AniList 每个地区最多翻多少页（每页 10 部作品 × 10 个角色，30 页约 300 部作品/地区）
+    ANIME_CRAWL_MAX_PAGES_PER_REGION: int = 30
+    # 每部动画抓取的角色数（AniList）
+    ANIME_CRAWL_CHARS_PER_MEDIA: int = 10
+    # 每部美漫剧集抓取的角色数（TVmaze）
+    ANIME_CRAWL_MAX_CAST_PER_SHOW: int = 20
+
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE),
         extra="ignore",
